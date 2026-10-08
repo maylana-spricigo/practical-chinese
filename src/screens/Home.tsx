@@ -69,7 +69,10 @@ export default function Home() {
             ))}
           </div>
           {err ? (
-            <button type="button" className="btn btn-light" onClick={() => setReload((n) => n + 1)}>Couldn’t reach Notion · retry</button>
+            <>
+              <p role="alert" style={{ margin: 0, fontSize: 13, lineHeight: 1.35, color: 'var(--pink)' }}>Couldn’t reach Notion: {err.message || 'no connection'}</p>
+              <button type="button" className="btn btn-light" onClick={() => setReload((n) => n + 1)}>Try again</button>
+            </>
           ) : (
             <button type="button" className="btn btn-light" disabled={!stats || due === 0} onClick={() => go('review')}>
               {stats && due === 0 ? 'All caught up 好' : <>Review now <Icon.Arrow color="#D2541A" /></>}
