@@ -56,3 +56,36 @@ export const TOPICS: { name: string; zh: string }[] = [
 ];
 
 export const ROUND_SIZE: Record<Length, number> = { short: 10, medium: 20, long: 30 };
+
+export interface Sentence {
+  id: string;
+  hz: string;
+  py: string;
+  en: string;
+  type: 'Statement' | 'Question';
+  tokens: string[];
+  distractors: string[];
+  focus: string;
+  grammar: string;
+  topics: string[];
+  status: Status;
+  answerIds: string[];
+  /** For questions in Ask the Question: the statement that answers it. */
+  answer?: Sentence;
+  /** Pinyin per token, when the token count matches the pinyin syllables (best effort). */
+  tokenPy?: string[];
+}
+
+export interface SentencesResponse { sentences: Sentence[]; available: number }
+
+/** Match/Build/Ask only log practice; they never change a word's box. */
+export interface PracticeRequest { kind: 'word' | 'sentence'; id: string; correct: boolean; today: string }
+
+/** Manual status change from the Dictionary. */
+export interface StatusRequest { id: string; status: Status; today: string }
+
+export interface TopicStat { topic: string; total: number; New: number; Learning: number; Known: number }
+export interface FullStats extends Stats { byTopic: TopicStat[] }
+
+export const PAIRS_SIZE: Record<Length, number> = { short: 4, medium: 6, long: 8 };
+export const SENTENCE_SIZE: Record<Length, number> = { short: 5, medium: 10, long: 15 };

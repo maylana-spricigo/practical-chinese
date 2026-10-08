@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { notion, WORDS_DS } from './_lib';
+import { notion, SENTENCES_DS, WORDS_DS } from './_lib';
 
 // GET /api/health — setup check. Reports only whether things are configured, never secrets or words.
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
@@ -17,6 +17,14 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       out.notion = 'error';
       out.notionCode = e?.code ?? null;
       out.notionMessage = e?.message ?? String(e);
+    }
+    try {
+      const r: any = await notion.dataSources.query({ data_source_id: SENTENCES_DS, page_size: 1 } as any);
+      out.sentences = 'ok';
+      out.sentenceFound = r.results.length > 0;
+    } catch (e: any) {
+      out.sentences = 'error';
+      out.sentencesMessage = e?.message ?? String(e);
     }
   }
   res.setHeader('Cache-Control', 'no-store');

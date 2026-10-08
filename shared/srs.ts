@@ -96,3 +96,10 @@ export function localToday(d = new Date()): string {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
+
+/** Box to store when the status is set by hand in the Dictionary. */
+export function manualStatus(status: Status, today: string): { box: number; nextReview: string | null } {
+  if (status === 'New') return { box: 0, nextReview: null };
+  if (status === 'Learning') return { box: 1, nextReview: addDays(today, INTERVALS[1]) };
+  return { box: 4, nextReview: addDays(today, INTERVALS[4]) };
+}

@@ -15,6 +15,7 @@
   "dependencies": {
     "@notionhq/client": "^5.27.0",
     "lxgw-wenkai-webfont": "^1.7.0",
+    "pinyin-pro": "^3.29.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

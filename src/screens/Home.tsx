@@ -107,9 +107,9 @@ export default function Home() {
 
         <section aria-label="Games" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <GameCard art="flashcards" bg="var(--orange)" title="Flashcards" zh="单词卡" py="dāncí kǎ" desc="Flip, recall and review the words you’re learning." onPlay={() => go('flashcards')} />
-          <GameCard art="match" bg="var(--pink)" title="Match the Pairs" zh="配对" py="pèiduì" desc="Connect each character to its meaning." />
-          <GameCard art="build" bg="var(--paper)" title="Build the Sentence" zh="连词成句" py="liáncí chéngjù" desc="Put the words in the right order." />
-          <GameCard art="ask" bg="var(--green)" dark title="Ask the Question" zh="提问" py="tíwèn" desc="Read the answer, then build the question." />
+          <GameCard art="match" bg="var(--pink)" title="Match the Pairs" zh="配对" py="pèiduì" desc="Connect each character to its meaning." onPlay={() => go('match')} />
+          <GameCard art="build" bg="var(--paper)" title="Build the Sentence" zh="连词成句" py="liáncí chéngjù" desc="Put the words in the right order." onPlay={() => go('build')} />
+          <GameCard art="ask" bg="var(--green)" dark title="Ask the Question" zh="提问" py="tíwèn" desc="Read the answer, then build the question." onPlay={() => go('ask')} />
         </section>
       </div>
     </main>

@@ -17,12 +17,27 @@ const page = (id: string, hz: string, status: string, box: number | null, next: 
   },
 });
 const PAGES = [page('a', '茶', 'Learning', 3, '2026-10-01'), page('b', '饺子', 'New', null, null)];
+const sent = (id: string, hz: string, type: string, tokens: string, answers: string[] = []) => ({
+  object: 'page', id,
+  properties: {
+    Sentence: { type: 'title', title: [{ plain_text: hz }] },
+    Type: { type: 'select', select: { name: type } },
+    Tokens: { type: 'rich_text', rich_text: [{ plain_text: tokens }] },
+    Distractors: { type: 'rich_text', rich_text: [{ plain_text: '吗|哪儿' }] },
+    Focus: { type: 'rich_text', rich_text: [{ plain_text: '茶' }] },
+    Status: { type: 'select', select: { name: 'New' } },
+    Answers: { type: 'relation', relation: answers.map((x) => ({ id: x })) },
+    'Times known': { type: 'number', number: 1 },
+  },
+});
+const SENTS = [sent('q1', '你喝什么？', 'Question', '你|喝|什么|？', ['s1']), sent('s1', '我喝茶。', 'Statement', '我|喝|茶|。')];
+const ALL: any[] = [...PAGES, ...SENTS];
 
 vi.mock('@notionhq/client', () => ({
   Client: class {
-    dataSources = { query: async (args: any) => { calls.query.push(args); return { results: PAGES, has_more: false, next_cursor: null }; } };
+    dataSources = { query: async (args: any) => { calls.query.push(args); const isS = args.data_source_id === 'dfdb2e9d-be12-4e1f-bd33-49d59bee93a5'; let r: any[] = isS ? SENTS : PAGES; if (isS && JSON.stringify(args.filter || {}).includes('Question')) r = SENTS.filter((x) => x.properties.Type.select.name === 'Question'); return { results: r, has_more: false, next_cursor: null }; } };
     pages = {
-      retrieve: async ({ page_id }: any) => PAGES.find((p) => p.id === page_id),
+      retrieve: async ({ page_id }: any) => ALL.find((p) => p.id === page_id),
       update: async (args: any) => { calls.update.push(args); return {}; },
     };
   },
@@ -88,6 +103,30 @@ describe('api', () => {
     const { default: stats } = await import('../api/stats');
     const res = mockRes();
     await stats({ query: { today: '2026-10-08' }, headers: { 'x-app-key': 'k' } } as any, res);
-    expect(res.body).toEqual({ total: 2, due: 1, byStatus: { New: 1, Learning: 1, Known: 0 } });
+    expect(res.body).toEqual({ total: 2, due: 1, byStatus: { New: 1, Learning: 1, Known: 0 }, byTopic: [{ topic: 'Food', total: 2, New: 1, Learning: 1, Known: 0 }] });
+  });
+
+  it('ask returns questions with their answer statement', async () => {
+    const { default: sentences } = await import('../api/sentences');
+    const res = mockRes();
+    await sentences({ query: { game: 'ask', count: '5' }, headers: { 'x-app-key': 'k' } } as any, res);
+    expect(res.code).toBe(200);
+    expect(res.body.sentences).toHaveLength(1);
+    expect(res.body.sentences[0]).toMatchObject({ hz: '你喝什么？', tokens: ['你', '喝', '什么', '？'], distractors: ['吗', '哪儿'] });
+    expect(res.body.sentences[0].answer).toMatchObject({ hz: '我喝茶。', focus: '茶' });
+  });
+
+  it('practice only bumps counters and last reviewed', async () => {
+    const { default: practice } = await import('../api/practice');
+    const res = mockRes();
+    await practice({ method: 'POST', headers: { 'x-app-key': 'k' }, query: {}, body: { kind: 'sentence', id: 's1', correct: true, today: '2026-10-08' } } as any, res);
+    expect(calls.update[0]).toEqual({ page_id: 's1', properties: { 'Times known': { number: 2 }, 'Last reviewed': { date: { start: '2026-10-08' } } } });
+  });
+
+  it('manual status keeps box and next review consistent', async () => {
+    const { default: status } = await import('../api/status');
+    const res = mockRes();
+    await status({ method: 'POST', headers: { 'x-app-key': 'k' }, query: {}, body: { id: 'b', status: 'Known', today: '2026-10-08' } } as any, res);
+    expect(calls.update[0].properties).toEqual({ Status: { select: { name: 'Known' } }, Box: { number: 4 }, 'Next review': { date: { start: '2026-10-22' } } });
   });
 });

@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as RPointer
 import { go } from '../App';
 import { Icon, Sheet, StatusPill, ToggleTile } from '../components';
 import { ApiError, DEMO, fetchRound } from '../lib/api';
-import { markStudiedToday } from '../lib/history';
+import { addActivity, addRound } from '../lib/history';
 import { LEVELS, loadSettings, saveSettings, type StudySettings } from '../lib/settings';
 import { speak } from '../lib/speak';
 import { enqueue, useSync } from '../lib/sync';
 import { INTERVALS, localToday, review, type Status } from '../../shared/srs';
 import { TOPICS, type Word } from '../../shared/types';
 import KeyPrompt from './KeyPrompt';
+import { ErrorState, Loading, Message } from '../components/states';
 
 type Phase = 'loading' | 'error' | 'empty' | 'play' | 'done';
 interface Change { id: string; hz: string; from: Status; to: Status; knew: boolean; days: number; counted: boolean }
@@ -62,6 +63,7 @@ export default function Flashcards({ mode }: { mode: 'round' | 'review' }) {
     const today = localToday();
     const r = review(w, knew, today);
     enqueue({ id: w.id, knew, today });
+    addActivity();
     setWords((ws) => ws.map((x, j) => (j === k ? { ...x, box: r.box, status: r.status, nextReview: r.nextReview, timesKnown: r.timesKnown, timesForgot: r.timesForgot } : x)));
     setChanges((cs) => [...cs.filter((c) => c.id !== w.id), { id: w.id, hz: w.hz, from: cs.find((c) => c.id === w.id)?.from ?? r.from, to: r.status, knew, days: INTERVALS[r.box], counted: r.counted }]);
     if (!knew) setMissed((m) => (m.includes(k) ? m : [...m, k]));
@@ -71,7 +73,7 @@ export default function Flashcards({ mode }: { mode: 'round' | 'review' }) {
       const ni = i + 1;
       setNoTrans(true); setDx(0); setFlipped(false); setAnim(false);
       setI(ni);
-      if (ni >= order.length) { setPhase('done'); markStudiedToday(); }
+      if (ni >= order.length) { setPhase('done'); addRound(); }
       requestAnimationFrame(() => requestAnimationFrame(() => setNoTrans(false)));
       busy.current = false;
     }, 260);
@@ -348,41 +350,7 @@ function Stat({ bg, label, n }: { bg: string; label: string; n: number }) {
   );
 }
 
-// ---- states ----
-
-function Loading() {
-  return (
-    <div role="status" aria-live="polite" style={{ position: 'relative', flex: 1, minHeight: 360, maxHeight: 520 }}>
-      <div aria-hidden="true" style={{ position: 'absolute', inset: '14px 10px -6px 10px', background: 'var(--sage)', border: '2px solid var(--ink)', borderRadius: 24, transform: 'rotate(3deg)' }} />
-      <div aria-hidden="true" style={{ position: 'absolute', inset: '8px 6px -2px 6px', background: 'var(--pink)', border: '2px solid var(--ink)', borderRadius: 24, transform: 'rotate(-2.5deg)' }} />
-      <div style={{ position: 'absolute', inset: 0, background: 'var(--paper)', border: '2px solid var(--ink)', borderRadius: 24, padding: '18px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 22 }}>
-        <svg className="wobble" width="110" height="110" viewBox="0 0 120 120" fill="none" aria-hidden="true">
-          <path d="M60 8 L60 78" stroke="#1C1A18" strokeWidth="7" strokeLinecap="round" /><path d="M60 10 L60 76" stroke="#C99A5B" strokeWidth="3" strokeLinecap="round" />
-          <path d="M52 76 C50 92 54 104 60 112 C66 104 70 92 68 76 Z" fill="#1C1A18" />
-          <path d="M22 30 L30 38 M16 52 L28 52 M98 30 L90 38 M104 52 L92 52" stroke="#EE6A2C" strokeWidth="3" strokeLinecap="round" />
-        </svg>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, textAlign: 'center' }}>
-          <p className="hand" style={{ margin: 0, fontSize: 22 }}>shuffling your cards<span className="dot">.</span><span className="dot" style={{ animationDelay: '.2s' }}>.</span><span className="dot" style={{ animationDelay: '.4s' }}>.</span></p>
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}><span className="hz" style={{ fontWeight: 400 }}>从词典取词</span> · getting words from your dictionary</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Message({ role, kicker, title, body, art, children }: { role: 'status' | 'alert'; kicker: string; title: string; body: string; art: string; children: React.ReactNode }) {
-  return (
-    <>
-      <div role={role} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, textAlign: 'center', padding: '0 12px' }}>
-        <p className="hz" aria-hidden="true" style={{ margin: 0, fontSize: 72, lineHeight: 1, transform: 'rotate(-4deg)', background: 'var(--pink)', border: '2px solid var(--ink)', borderRadius: 16, padding: '10px 18px' }}>{art}</p>
-        <p className="hand accent tilt" style={{ margin: 0, fontSize: 18 }}>{kicker}</p>
-        <h1 className="serif" style={{ margin: 0, fontSize: 30, lineHeight: 1.05 }}>{title}</h1>
-        <p style={{ margin: 0, fontSize: 15, lineHeight: 1.45, color: '#3E3A35', maxWidth: 300 }}>{body}</p>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
-    </>
-  );
-}
+// ---- empty state ----
 
 function Empty({ mode, settings, onFix }: { mode: 'round' | 'review'; settings: StudySettings; onFix: (p: Partial<StudySettings>) => void }) {
   if (mode === 'review') {
@@ -413,13 +381,3 @@ function Empty({ mode, settings, onFix }: { mode: 'round' | 'review'; settings: 
   );
 }
 
-function ErrorState({ error, onRetry }: { error: ApiError | null; onRetry: () => void }) {
-  const offline = !error || error.status === 0;
-  return (
-    <Message role="alert" art="词" kicker="哎呀 · oops" title="Couldn’t load your words"
-      body={offline ? 'We couldn’t reach your Notion dictionary. Check your connection and try again — nothing you’ve learned is lost.' : `Notion said: ${error.message}. Try again in a moment.`}>
-      <button type="button" className="btn btn-dark" onClick={onRetry}>Try again</button>
-      <button type="button" className="btn" onClick={() => go('')}>Back home</button>
-    </Message>
-  );
-}

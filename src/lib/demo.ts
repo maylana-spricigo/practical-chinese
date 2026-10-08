@@ -16,3 +16,15 @@ export const DEMO_WORDS: Word[] = [
   W('d9', '早上', 'zǎoshang', 'morning', ['Time'], 'New', 0, null, 'noun', '', '我早上喝咖啡。', 'Wǒ zǎoshang hē kāfēi.', 'I drink coffee in the morning.'),
   W('d10', '超市', 'chāoshì', 'supermarket', ['Places'], 'New', 0, null, 'noun', '家 jiā', '超市在哪儿？', 'Chāoshì zài nǎr?', 'Where is the supermarket?'),
 ];
+
+import type { Sentence } from '../../shared/types';
+const S = (id: string, type: Sentence['type'], hz: string, py: string, en: string, tokens: string[], distractors: string[], focus = '', answerIds: string[] = [], topics = ['Food']): Sentence =>
+  ({ id, hz, py, en, type, tokens, distractors, focus, grammar: '', topics, status: 'New', answerIds });
+
+export const DEMO_SENTENCES: Sentence[] = [
+  S('s1', 'Statement', '我喝茶。', 'Wǒ hē chá.', 'I drink tea.', ['我', '喝', '茶', '。'], ['咖啡', '吃'], '茶'),
+  S('s2', 'Question', '你喝什么？', 'Nǐ hē shénme?', 'What do you drink?', ['你', '喝', '什么', '？'], ['吗', '哪儿'], '什么', ['s1']),
+  S('s3', 'Statement', '我要一碗米饭。', 'Wǒ yào yì wǎn mǐfàn.', 'I’d like a bowl of rice.', ['我', '要', '一碗', '米饭', '。'], ['面条'], '一碗米饭'),
+  S('s4', 'Question', '你要什么？', 'Nǐ yào shénme?', 'What would you like?', ['你', '要', '什么', '？'], ['吗'], '什么', ['s3']),
+  S('s5', 'Statement', '他们都吃饺子。', 'Tāmen dōu chī jiǎozi.', 'They all eat dumplings.', ['他们', '都', '吃', '饺子', '。'], ['也'], '饺子'),
+];

@@ -1,11 +1,23 @@
 import { useEffect, useState } from 'react';
-import { ApiError, postReview } from './api';
+import { ApiError, postPractice, postReview, postStatus } from './api';
+import type { PracticeRequest, StatusRequest } from '../../shared/types';
 import { read, write } from './storage';
 
 // Flashcard answers are saved one by one through a small queue that survives
 // going offline or closing the app, and is retried when the connection returns.
 
-export interface QueueItem { id: string; knew: boolean; today: string }
+// Flashcards answers (review), practice logs from the other games, and status changes from the Dictionary.
+export type QueueItem =
+  | { type?: 'review'; id: string; knew: boolean; today: string }
+  | ({ type: 'practice' } & PracticeRequest)
+  | ({ type: 'status' } & StatusRequest);
+
+function send(item: QueueItem) {
+  if (item.type === 'practice') { const { type: _t, ...p } = item; return postPractice(p); }
+  if (item.type === 'status') { const { type: _t, ...p } = item; return postStatus(p); }
+  const { id, knew, today } = item as { id: string; knew: boolean; today: string };
+  return postReview({ id, knew, today });
+}
 export type SyncStatus = 'idle' | 'saving' | 'failed' | 'auth';
 
 const KEY = 'pc.queue';
@@ -30,7 +42,7 @@ export async function flush() {
   emit();
   while (queue.length) {
     try {
-      await postReview(queue[0]);
+      await send(queue[0]);
       queue.shift();
       persist();
       emit();

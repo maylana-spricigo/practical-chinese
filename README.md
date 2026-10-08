@@ -1,7 +1,7 @@
 # Practical Chinese
 
 A small PWA for studying Chinese with your own **词典 (cídiǎn)** Notion database.
-First release: **Flashcards** end to end (home, study settings, rounds, spaced repetition saved to Notion).
+Home, study settings, **Flashcards** (spaced repetition saved to Notion), **Match the Pairs**, **Build the Sentence**, **Ask the Question**, **Dictionary** and **Progress**.
 
 ## How it works
 
@@ -10,10 +10,14 @@ phone (PWA, React)  ──►  /api/* on Vercel (keeps your Notion key secret)  
 ```
 
 - `src/` — the app (screens follow the Claude Design canvas: Home, Study settings, Flashcards + loading/empty/error/sync states).
-- `api/` — three serverless functions:
-  - `GET /api/words` — picks words for a round (Easy = studied, Hard = new, Medium = half/half) or today's review.
+- `api/` — serverless functions:
+  - `GET /api/words` — words for a round (Easy = studied, Hard = new, Medium = half/half), today's review, or all (Dictionary).
   - `POST /api/review` — saves one Flashcards answer (Box, Status, Next review, Last reviewed, counters).
-  - `GET /api/stats` — numbers for the Today card.
+  - `GET /api/sentences` — sentences from 句子 for Build the Sentence, or questions + their answers for Ask the Question.
+  - `POST /api/practice` — Match/Build/Ask log practice (Times known/forgot, Last reviewed) without changing a word's box.
+  - `POST /api/status` — set a word's status by hand from the Dictionary.
+  - `GET /api/stats` — numbers for Today and Progress.
+  - `GET /api/health` — setup check (is the token set, can it read 词典 and 句子).
 - `shared/srs.ts` — the spaced-repetition rule, used by both sides:
 
 | Box | Status   | Comes back in |
@@ -32,12 +36,12 @@ Answers are saved one at a time through a queue on the phone, so nothing is lost
 ## Set up (once)
 
 1. **Notion integration** — at <https://www.notion.so/my-integrations> open your integration and copy its secret.
-   In Notion, open the **词典 (cídiǎn)** database → `•••` → *Connections* → add the integration.
+   In Notion, open the **词典 (cídiǎn)** and **句子 (jùzi)** pages → `•••` → *Connections* → add the integration.
 2. **Vercel** — sign in at <https://vercel.com> with GitHub → *Add New… → Project* → import this repository.
 3. In the project's **Settings → Environment Variables** add:
    - `NOTION_TOKEN` — the integration secret
    - `APP_KEY` — any long passphrase (the app asks for it once; it keeps strangers out of your dictionary)
-   - `NOTION_WORDS_DATA_SOURCE` — optional, defaults to `3de10ad0-4071-8097-b653-000bbec9ec4a`
+   - `NOTION_WORDS_DATA_SOURCE` / `NOTION_SENTENCES_DATA_SOURCE` — optional, default to your 词典 and 句子 data sources
 4. Deploy. Open the URL on your phone → Share → **Add to Home Screen**.
 
 ## Develop
@@ -51,4 +55,4 @@ npx vercel dev   # full app + API locally (needs the env vars in .env.local)
 
 ## Next
 
-Dictionary and Progress tabs, then Match the Pairs, Build the Sentence and Ask the Question (they log practice but don't change a word's box), then Bookshelf.
+Bookshelf, and the improvements from the first real use.

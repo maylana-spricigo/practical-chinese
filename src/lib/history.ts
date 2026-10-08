@@ -35,3 +35,28 @@ export function thisWeek(today = new Date()) {
     return { label: l, done: days.has(key), isToday: key === localToday(today), future: d > today };
   });
 }
+
+// Answers per day (all games), for the Progress week chart.
+const ACT = 'pc.activity';
+export function addActivity(n = 1) {
+  const a = read<Record<string, number>>(ACT, {});
+  const k = localToday();
+  a[k] = (a[k] || 0) + n;
+  const keys = Object.keys(a).sort();
+  for (const old of keys.slice(0, Math.max(0, keys.length - 120))) delete a[old];
+  write(ACT, a);
+}
+export function activity(): Record<string, number> { return read<Record<string, number>>(ACT, {}); }
+
+const ROUNDS = 'pc.rounds';
+export function addRound() { write(ROUNDS, read<number>(ROUNDS, 0) + 1); markStudiedToday(); }
+export function roundsPlayed(): number { return read<number>(ROUNDS, 0); }
+
+export function weekActivity(today = new Date()) {
+  const a = activity();
+  return thisWeek(today).map((d, i) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - ((today.getDay() + 6) % 7) + i);
+    return { ...d, count: a[localToday(date)] || 0 };
+  });
+}
