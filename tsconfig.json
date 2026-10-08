@@ -1,17 +1,16 @@
 {
+  // Used by Vercel to compile the serverless functions in api/ (CommonJS, like package.json).
+  // The app itself is type-checked with tsconfig.app.json and bundled by Vite.
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "jsx": "react-jsx",
+    "module": "CommonJS",
+    "moduleResolution": "node",
     "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
     "esModuleInterop": true,
+    "skipLibCheck": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "types": ["vite/client", "vite-plugin-pwa/client", "node"]
+    "types": ["node"]
   },
-  "include": ["src", "shared", "api"]
+  "include": ["api", "shared"],
+  "exclude": ["**/*.test.ts"]
 }
