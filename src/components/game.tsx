@@ -1,8 +1,82 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { go } from '../App';
-import { Icon } from '../components';
+import { Icon, Sheet } from '../components';
 import { DEMO } from '../lib/api';
+import { LEVELS, loadRound, loadSettings, saveRound, type Round } from '../lib/settings';
 import type { useSync } from '../lib/sync';
+import { GAME_COUNTS, GAME_UNIT, TOPICS, type Game } from '../../shared/types';
+
+/** The round a game plays (remembered per game) and a counter that starts a new round when it changes. */
+export function useRound(game: Game) {
+  const [round, setRound] = useState<Round>(() => loadRound(game));
+  const [epoch, setEpoch] = useState(0);
+  return {
+    round, epoch,
+    again: () => setEpoch((n) => n + 1),
+    apply: (r: Round) => { saveRound(game, r); setRound(r); setEpoch((n) => n + 1); },
+  };
+}
+
+export const roundLabel = (r: Round, extra?: string) =>
+  [r.cat === 'all' ? 'All topics' : r.cat, extra ?? LEVELS.find((l) => l.id === r.level)?.name].filter(Boolean).join(' · ');
+
+const TOPIC_CHIPS = [{ name: 'all', zh: '全部', label: 'All topics' }, ...[...TOPICS].sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({ ...t, label: t.name }))];
+
+/** Round settings sheet used by every game: this game's round + the in-game options passed as children. */
+export function RoundSheet({ game, title, zh, py, round, onApply, onClose, children }: {
+  game: Game; title: string; zh: string; py: string; round: Round; onApply: (r: Round) => void; onClose: () => void; children?: ReactNode;
+}) {
+  const [d, setD] = useState<Round>(round);
+  const changed = d.cat !== round.cat || d.level !== round.level || d.len !== round.len;
+  const counts = GAME_COUNTS[game];
+  const label = { fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase' as const, color: 'var(--grey)', margin: 0 };
+  const sub = (z: string, p: string) => <span style={{ fontWeight: 500, color: 'var(--grey)' }}><span className="hz" style={{ fontWeight: 400 }}>{z}</span> · {p}</span>;
+  return (
+    <Sheet label={`${title} options`} onClose={onClose}>
+      <div className="sec-head"><h2>{title}</h2><p><span className="hz" style={{ fontWeight: 400 }}>{zh}</span> · {py}</p></div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 14, borderBottom: '1.5px dashed var(--ink)' }}>
+        <p style={label}>This game’s round</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Topic {sub('类别', 'lèibié')}</p>
+          <div className="scroll" role="group" aria-label="Topic" style={{ flexDirection: 'row', gap: 6, overflowX: 'auto', overflowY: 'hidden', margin: '0 -16px', padding: '2px 16px' }}>
+            {TOPIC_CHIPS.map((t) => (
+              <button key={t.name} type="button" className="pill choice" aria-pressed={d.cat === t.name} onClick={() => setD({ ...d, cat: t.name })} style={{ height: 36, fontSize: 13, borderRadius: 999 }}>
+                <span className="hz" style={{ fontSize: 14 }}>{t.zh}</span>{t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Difficulty {sub('难度', 'nándù')}</p>
+          <div role="radiogroup" aria-label="Difficulty" className="seg" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+            {LEVELS.map((l) => (
+              <button key={l.id} type="button" role="radio" aria-checked={d.level === l.id} onClick={() => setD({ ...d, level: l.id })} style={{ height: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+                <span style={{ fontSize: 15, fontWeight: 600, lineHeight: 1 }}>{l.name}</span>
+                <span style={{ fontSize: 11, lineHeight: 1, opacity: 0.8 }}>{l.desc.toLowerCase()}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Round length {sub('长度', 'chángdù')}</p>
+          <div role="radiogroup" aria-label="Round length" className="seg" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+            {(['short', 'medium', 'long'] as const).map((id) => (
+              <button key={id} type="button" role="radio" aria-checked={d.len === id} onClick={() => setD({ ...d, len: id })} style={{ height: 48, fontSize: 14, fontWeight: 600 }}>
+                {counts[id]} {GAME_UNIT[game]}
+              </button>
+            ))}
+          </div>
+        </div>
+        {changed && <p className="hand accent" style={{ margin: 0, fontSize: 15 }}>changing these starts a new round</p>}
+      </div>
+      {children && <><p style={label}>During the game</p>{children}</>}
+      <button type="button" className="btn btn-dark" onClick={() => (changed ? onApply(d) : onClose())}>{changed ? 'Start new round' : 'Done'}</button>
+      <button type="button" onClick={() => setD(loadSettings())} style={{ minHeight: 44, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--grey)' }}>
+        Reset to <span style={{ fontWeight: 600, color: 'var(--ink)', textDecoration: 'underline' }}>Study settings</span> defaults
+      </button>
+    </Sheet>
+  );
+}
 
 export function GameTopBar({ title, label, progress, onOptions, optionsDisabled }: {
   title: ReactNode; label: string; progress: number | 'loading'; onOptions?: () => void; optionsDisabled?: boolean;
@@ -36,9 +110,9 @@ export function SyncLabel({ sync }: { sync: ReturnType<typeof useSync> }) {
   );
 }
 
-export function PracticeDone({ kicker, a, b, listTitle, items, emptyMsg, retryLabel, onRetry, onPlayAgain, sync }: {
+export function PracticeDone({ kicker, a, b, listTitle, items, emptyMsg, retryLabel, onRetry, onPlayAgain, onChangeRound, sync }: {
   kicker: string; a: { label: string; n: number }; b: { label: string; n: number }; listTitle: string;
-  items: { top: string; sub: string }[]; emptyMsg: string; retryLabel?: string; onRetry?: () => void; onPlayAgain: () => void; sync: ReturnType<typeof useSync>;
+  items: { top: string; sub: string }[]; emptyMsg: string; retryLabel?: string; onRetry?: () => void; onPlayAgain: () => void; onChangeRound: () => void; sync: ReturnType<typeof useSync>;
 }) {
   return (
     <div style={{ flex: 1, minHeight: 0, background: 'var(--green)', color: 'var(--cream)', border: '2px solid var(--ink)', borderRadius: 24, padding: '22px 18px 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -73,13 +147,11 @@ export function PracticeDone({ kicker, a, b, listTitle, items, emptyMsg, retryLa
         {items.length > 0 && onRetry && <button type="button" className="btn btn-light" onClick={onRetry}>{retryLabel}</button>}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
           <button type="button" className="btn btn-ghost-light" onClick={onPlayAgain}>Play again</button>
-          <button type="button" className="btn btn-ghost-light" onClick={() => go('settings')}>Settings</button>
+          <button type="button" className="btn btn-ghost-light" onClick={onChangeRound}>Change round</button>
         </div>
       </div>
     </div>
   );
 }
 
-export function useRoundLabel(topicName: string | undefined, levelName: string | undefined, extra?: string) {
-  return [topicName ?? 'All topics', extra ?? levelName].filter(Boolean).join(' · ');
-}
+

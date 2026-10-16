@@ -1,27 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { go } from '../App';
 import { SectionHead } from '../components';
 import { ErrorState, Loading } from '../components/states';
-import { ApiError, fetchStats } from '../lib/api';
 import { roundsPlayed, streak, weekActivity } from '../lib/history';
-import { TOPICS, type FullStats } from '../../shared/types';
+import { useStore } from '../lib/store';
+import { computeStats } from '../../shared/rounds';
+import { localToday } from '../../shared/srs';
+import { TOPICS } from '../../shared/types';
 import KeyPrompt from './KeyPrompt';
 
 const pct = (a: number, b: number) => (b ? `${(a / b) * 100}%` : '0%');
 
 export default function Progress() {
-  const [stats, setStats] = useState<FullStats | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
-  const [reload, setReload] = useState(0);
+  const store = useStore('words');
+  const stats = useMemo(() => (store.items ? computeStats(store.items, localToday()) : null), [store.items]);
+  const error = stats ? null : store.error;
 
-  useEffect(() => {
-    let live = true;
-    setError(null);
-    fetchStats().then((s) => live && setStats(s)).catch((e) => live && setError(e));
-    return () => { live = false; };
-  }, [reload]);
-
-  if (error?.status === 401) return <KeyPrompt onDone={() => setReload((n) => n + 1)} />;
+  if (store.error?.status === 401) return <KeyPrompt onDone={() => void store.retry()} />;
 
   const week = weekActivity();
   const max = Math.max(1, ...week.map((d) => d.count));
@@ -38,7 +33,7 @@ export default function Progress() {
         </div>
 
         {!stats && !error && <div style={{ display: 'flex', height: 420 }}><Loading cards={false} line="counting your words" sub="reading your dictionary" zh="数一数" /></div>}
-        {error && <div style={{ display: 'flex', flexDirection: 'column', minHeight: 480, gap: 10 }}><ErrorState error={error} what="progress" onRetry={() => setReload((n) => n + 1)} /></div>}
+        {error && <div style={{ display: 'flex', flexDirection: 'column', minHeight: 480, gap: 10 }}><ErrorState error={error} what="progress" onRetry={() => void store.retry()} /></div>}
 
         {stats && (
           <>

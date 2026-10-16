@@ -1,35 +1,45 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { go } from '../App';
-import { Icon, SectionHead, Sheet, ToggleTile } from '../components';
-import { GameTopBar, PracticeDone } from '../components/game';
+import { Icon, ToggleTile } from '../components';
+import { GameTopBar, PracticeDone, RoundSheet, roundLabel, useRound } from '../components/game';
 import { ErrorState, Loading, Message } from '../components/states';
-import { ApiError, fetchSentences } from '../lib/api';
 import { addActivity, addRound } from '../lib/history';
-import { tilePinyin } from '../lib/py';
-import { LEVELS, loadSettings } from '../lib/settings';
+import { tilesPinyin } from '../lib/py';
+import { useGameOptions, type Round } from '../lib/settings';
 import { speak } from '../lib/speak';
+import { useStore } from '../lib/store';
 import { enqueue, useSync } from '../lib/sync';
 import { localToday } from '../../shared/srs';
-import { SENTENCE_SIZE, TOPICS, type Sentence } from '../../shared/types';
+import { pickSentences } from '../../shared/rounds';
+import { SENTENCE_SIZE, type Sentence } from '../../shared/types';
 import KeyPrompt from './KeyPrompt';
 
 type Game = 'build' | 'ask';
-interface Item { s: Sentence; tiles: { t: string; p: string; real: boolean }[]; order: number[] }
+interface Item { s: Sentence; tiles: { t: string; p: string; real: boolean }[]; order: number[]; end: string }
 
 const shuffle = <T,>(a: T[]) => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
-const strip = (x: string) => x.replace(/[。，、！？.,!?\s]/g, '');
+const PUNCT = /^[。，、！？.,!?；;：:\s…“”"'（）()]+$/;
+const strip = (x: string) => x.replace(/[。，、！？.,!?；;：:\s…“”"'（）()]/g, '');
 
-function makeItem(s: Sentence): Item {
-  const tiles = [...s.tokens.map((t) => ({ t, p: tilePinyin(t), real: true })), ...s.distractors.map((t) => ({ t, p: tilePinyin(t), real: false }))];
+// Build follows the exam (连词成句): only the sentence's own words, no punctuation tiles.
+// Ask can add the "Distractors" from Notion as extra tiles.
+function makeItem(s: Sentence, game: Game): Item {
+  const words = s.tokens.filter((t) => !PUNCT.test(t));
+  const extras = game === 'ask' ? s.distractors.filter((t) => !PUNCT.test(t)) : [];
+  const py = tilesPinyin(s.hz, [...words, ...extras]);
+  const tiles = [...words.map((t, k) => ({ t, p: py[k], real: true })), ...extras.map((t, k) => ({ t, p: py[words.length + k], real: false }))];
+  const last = s.tokens.length ? s.tokens[s.tokens.length - 1] : '';
+  const end = PUNCT.test(last) ? last : (/[。！？?!.]$/.test(s.hz) ? s.hz.slice(-1) : '');
   let order = shuffle(tiles.map((_, k) => k));
   if (order.every((k, i) => k === i) && order.length > 1) order = [...order.slice(1), order[0]]; // never start solved
-  return { s, tiles, order };
+  return { s, tiles, order, end };
 }
 
 export default function Sentences({ game }: { game: Game }) {
-  const settings = useMemo(loadSettings, []);
+  const { round, epoch, again, apply } = useRound(game);
+  const store = useStore('sentences');
+  const ready = !!store.items;
   const [phase, setPhase] = useState<'loading' | 'error' | 'empty' | 'play' | 'done'>('loading');
-  const [error, setError] = useState<ApiError | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [queue, setQueue] = useState<number[]>([]);
   const [i, setI] = useState(0);
@@ -39,44 +49,38 @@ export default function Sentences({ game }: { game: Game }) {
   const [missed, setMissed] = useState<number[]>([]);
   const [logged, setLogged] = useState<Set<string>>(new Set());
   const [sheet, setSheet] = useState(false);
-  const [help, setHelp] = useState({ focus: true, pinyin: settings.help.pinyin, extra: settings.help.extra, audio: settings.help.audio });
-  const [reload, setReload] = useState(0);
+  const [help, setHelpOpt] = useGameOptions(game, { focus: true, pinyin: false, extra: game === 'ask', audio: false });
   const sync = useSync();
 
   const start = (q: number[]) => { setQueue(q); setI(0); setPlaced([]); setResult(null); setRight(0); setMissed([]); setPhase('play'); };
 
   useEffect(() => {
-    let live = true;
-    setPhase('loading');
-    fetchSentences({ game, topic: settings.cat, level: settings.level, count: SENTENCE_SIZE[settings.len] })
-      .then((r) => {
-        if (!live) return;
-        const its = r.sentences.map(makeItem);
-        setItems(its);
-        setLogged(new Set());
-        if (!its.length) { setPhase('empty'); return; }
-        start(its.map((_, k) => k));
-      })
-      .catch((e) => { if (live) { setError(e); setPhase('error'); } });
-    return () => { live = false; };
-  }, [game, settings, reload]);
+    if (!ready) return;
+    const r = pickSentences(store.items!, { game, topic: round.cat, level: round.level, count: SENTENCE_SIZE[round.len] });
+    const its = r.sentences.map((x) => makeItem(x, game)).filter((x) => x.tiles.filter((t) => t.real).length > 1);
+    setItems(its);
+    setLogged(new Set());
+    if (!its.length) { setPhase('empty'); return; }
+    start(its.map((_, k) => k));
+  }, [ready, epoch]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!ready && store.error) setPhase('error'); }, [ready, store.error]);
 
   const item = phase === 'play' ? items[queue[i]] : undefined;
   useEffect(() => { if (item && game === 'build' && help.audio) speak(item.s.hz); }, [item?.s.id, i]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (phase === 'error' && error?.status === 401) return <KeyPrompt onDone={() => setReload((x) => x + 1)} />;
+  if (store.error?.status === 401) return <KeyPrompt onDone={() => void store.retry()} />;
 
   const isBuild = game === 'build';
-  const topic = TOPICS.find((t) => t.name === settings.cat);
-  const label = `${topic?.name ?? 'All topics'} · ${LEVELS.find((l) => l.id === settings.level)?.name}`;
+  const label = roundLabel(round);
   const total = queue.length;
-  const bank = item ? item.order.filter((k) => help.extra || item.tiles[k].real) : [];
+  const bank = item ? item.order.filter((k) => (help.extra && !isBuild) || item.tiles[k].real) : [];
   const placedBg = result === 'right' ? 'var(--sage)' : result === 'wrong' ? 'var(--orange)' : 'var(--ink)';
   const placedFg = result ? 'var(--ink)' : 'var(--cream)';
 
   const check = () => {
     if (!item || result || !placed.length) return;
-    const ok = strip(placed.map((k) => item.tiles[k].t).join('')) === strip(item.s.tokens.join(''));
+    const answer = strip(placed.map((k) => item.tiles[k].t).join(''));
+    const ok = answer === strip(item.s.tokens.join('')) || (item.s.alts ?? []).some((a) => strip(a) === answer);
     setResult(ok ? 'right' : 'wrong');
     if (ok) { setRight((x) => x + 1); speak(item.s.hz); } else setMissed((m) => [...m, queue[i]]);
     if (!logged.has(item.s.id)) {
@@ -121,16 +125,16 @@ export default function Sentences({ game }: { game: Game }) {
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 16, padding: '16px 16px calc(20px + var(--safe-bottom))', overflowY: 'auto' }}>
         <GameTopBar title={phase === 'play' || phase === 'done' ? <>{isBuild ? 'Sentence' : 'Question'} {Math.min(i + 1, total)} <span style={{ fontWeight: 500, color: 'var(--grey)' }}>of {total}</span></> : isBuild ? 'Build the Sentence' : 'Ask the Question'}
           label={label} progress={phase === 'loading' ? 'loading' : total ? Math.min(i, total) / total : 0}
-          onOptions={() => setSheet(true)} optionsDisabled={phase !== 'play'} />
+          onOptions={() => setSheet(true)} optionsDisabled={phase === 'loading'} />
 
         {phase === 'loading' && <Loading cards={false} line={isBuild ? 'cutting up sentences' : 'thinking of questions'} zh="句子" sub="getting sentences from Notion" />}
-        {phase === 'error' && <ErrorState error={error} what="sentences" onRetry={() => setReload((x) => x + 1)} />}
+        {phase === 'error' && <ErrorState error={store.error} what="sentences" onRetry={() => void store.retry()} />}
         {phase === 'empty' && (
           <Message role="status" art="句" kicker="空空的 · nothing here" title={isBuild ? 'No sentences yet' : 'No questions yet'}
             body={isBuild
-              ? `Add sentences to the 句子 database in Notion${topic ? ` tagged ${topic.name}` : ''}. Fill “Tokens” with the tiles, separated by |.`
-              : `Ask the Question needs questions in 句子 with an “Answers” link to the statement that answers them${topic ? `, tagged ${topic.name}` : ''}.`}>
-            <button type="button" className="btn" onClick={() => go('settings')}>Change settings</button>
+              ? `Add sentences to the 句子 database in Notion${round.cat !== 'all' ? ` tagged ${round.cat}` : ''}. Fill “Tokens” with the words, separated by |.`
+              : `Ask the Question needs questions in 句子 with an “Answers” link to the statement that answers them${round.cat !== 'all' ? `, tagged ${round.cat}` : ''}.`}>
+            <button type="button" className="btn" onClick={() => setSheet(true)}>Change round</button>
             <button type="button" className="btn" onClick={() => go('')}>Back home</button>
           </Message>
         )}
@@ -138,12 +142,12 @@ export default function Sentences({ game }: { game: Game }) {
         {phase === 'play' && item && (
           <>
             {isBuild ? (
-              <div style={{ background: 'var(--paper)', border: '2px solid var(--ink)', borderRadius: 20, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <p className="hand accent" style={{ margin: 0, fontSize: 16 }}>say it in Chinese</p>
-                  {help.audio && <button type="button" onClick={() => speak(item.s.hz)} className="pill" style={{ minHeight: 36, background: 'transparent', fontSize: 13 }}><Icon.Speaker size={16} /> listen</button>}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '0 2px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <p className="serif" style={{ margin: 0, fontSize: 22, lineHeight: 1.1 }}>Put the words in order</p>
+                  <p className="muted" style={{ margin: 0, fontSize: 13 }}><span className="hz" style={{ fontWeight: 400 }}>连词成句</span> · liáncí chéngjù · {item.tiles.filter((t) => t.real).length} words</p>
                 </div>
-                <p className="serif" style={{ margin: 0, fontSize: 26, lineHeight: 1.15 }}>{item.s.en}</p>
+                {help.audio && <button type="button" onClick={() => speak(item.s.hz)} className="pill" style={{ flex: 'none', minHeight: 40, background: 'var(--paper)', fontSize: 13, borderWidth: 2 }}><Icon.Speaker size={16} /> listen</button>}
               </div>
             ) : (
               <>
@@ -166,9 +170,10 @@ export default function Sentences({ game }: { game: Game }) {
               </>
             )}
 
-            <div aria-label="Your sentence" style={{ minHeight: 132, border: '2px dashed var(--ink)', borderRadius: 18, padding: 12, display: 'flex', flexWrap: 'wrap', alignContent: 'flex-start', gap: 8, background: 'rgba(248,243,234,0.5)' }}>
+            <div aria-label="Your sentence" style={{ minHeight: isBuild ? 150 : 132, border: '2px dashed var(--ink)', borderRadius: 18, padding: 12, display: 'flex', flexWrap: 'wrap', alignContent: 'flex-start', gap: 8, background: 'rgba(248,243,234,0.5)' }}>
               {!placed.length && <p className="hand muted" style={{ margin: 'auto', fontSize: 17 }}>tap the tiles in order</p>}
               {placed.map((k, pos) => <Tile key={`${k}-${pos}`} k={k} inAnswer pos={pos} />)}
+              {item.end && placed.length > 0 && placed.length === item.tiles.filter((t) => t.real).length && <span lang="zh-Hans" aria-hidden="true" className="hz" style={{ alignSelf: 'flex-end', fontSize: 24, lineHeight: 1.6 }}>{item.end}</span>}
             </div>
 
             <div aria-label="Tiles" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 'auto' }}>
@@ -187,7 +192,7 @@ export default function Sentences({ game }: { game: Game }) {
                   <p className="hand" style={{ margin: 0, fontWeight: 700, fontSize: 19 }}>很好！ that’s right</p>
                   <button type="button" onClick={() => speak(item.s.hz)} aria-label="Play sentence" style={{ width: 44, height: 44, borderRadius: '50%', border: '2px solid var(--ink)', background: 'var(--paper)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon.Speaker size={20} /></button>
                 </div>
-                <p style={{ margin: 0, fontSize: 14 }}>{item.s.py}</p>
+                <p style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 2 }}><span style={{ fontSize: 14, fontWeight: 600 }}>{item.s.py}</span><span style={{ fontSize: 14 }}>{item.s.en}</span></p>
                 <button type="button" className="btn btn-dark" onClick={next}>Next →</button>
               </div>
             )}
@@ -196,7 +201,7 @@ export default function Sentences({ game }: { game: Game }) {
                 <p className="hand" style={{ margin: 0, fontWeight: 700, fontSize: 19 }}>差一点 · not quite</p>
                 <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Correct {isBuild ? 'sentence' : 'question'}</p>
                 <p lang="zh-Hans" className="hz" style={{ margin: 0, fontSize: 22, lineHeight: 1.2 }}>{item.s.hz}</p>
-                <p style={{ margin: 0, fontSize: 14 }}>{item.s.py}</p>
+                <p style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 2 }}><span style={{ fontSize: 14, fontWeight: 600 }}>{item.s.py}</span><span style={{ fontSize: 14 }}>{item.s.en}</span></p>
                 <button type="button" className="btn btn-dark" onClick={next}>Next →</button>
               </div>
             )}
@@ -207,26 +212,22 @@ export default function Sentences({ game }: { game: Game }) {
           <PracticeDone kicker={isBuild ? '太棒了 · well built!' : '太棒了 · great questions!'}
             a={{ label: 'Correct', n: right }} b={{ label: 'To review', n: missed.length }}
             listTitle={isBuild ? 'Sentences to practise' : 'Questions to practise'}
-            items={missed.map((k) => ({ top: items[k].s.hz, sub: items[k].s.en }))}
+            items={missed.map((k) => ({ top: items[k].s.hz, sub: [items[k].s.py, items[k].s.en].filter(Boolean).join(' · ') }))}
             emptyMsg="全对！ every one right" retryLabel={`Retry the ${missed.length} I missed`} onRetry={() => start(missed)}
-            onPlayAgain={() => setReload((x) => x + 1)} sync={sync} />
+            onPlayAgain={again} onChangeRound={() => setSheet(true)} sync={sync} />
         )}
       </div>
 
       {sheet && (
-        <Sheet label="Round options" onClose={() => setSheet(false)}>
-          <SectionHead title="Round options" zh="提示" py="tíshì" />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
-            {!isBuild && <ToggleTile on={help.focus} name="Highlight" desc="the part to ask about" onClick={() => setHelp((h) => ({ ...h, focus: !h.focus }))} />}
-            <ToggleTile on={help.pinyin} name="Pinyin" desc="under each tile" onClick={() => setHelp((h) => ({ ...h, pinyin: !h.pinyin }))} />
-            <ToggleTile on={help.extra} name="Extra tiles" desc="words that don’t fit" onClick={() => { setHelp((h) => ({ ...h, extra: !h.extra })); if (item) setPlaced((p) => p.filter((k) => item.tiles[k].real)); }} />
-            {isBuild && <ToggleTile on={help.audio} name="Listen first" desc="hear the sentence" onClick={() => setHelp((h) => ({ ...h, audio: !h.audio }))} />}
+        <RoundSheet game={game} title={isBuild ? 'Build the Sentence' : 'Ask the Question'} zh={isBuild ? '连词成句' : '提问'} py={isBuild ? 'liáncí chéngjù' : 'tíwèn'}
+          round={round} onClose={() => setSheet(false)} onApply={(r: Round) => { apply(r); setSheet(false); }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${isBuild ? 2 : 3}, minmax(0, 1fr))`, gap: 8 }}>
+            {!isBuild && <ToggleTile on={help.focus} name="Highlight" desc="the part to ask about" onClick={() => setHelpOpt({ focus: !help.focus })} />}
+            <ToggleTile on={help.pinyin} name="Pinyin" desc="under each tile" onClick={() => setHelpOpt({ pinyin: !help.pinyin })} />
+            {!isBuild && <ToggleTile on={help.extra} name="Extra tiles" desc="words that don’t fit" onClick={() => { setHelpOpt({ extra: !help.extra }); if (item) setPlaced((p) => p.filter((k) => item.tiles[k].real)); }} />}
+            {isBuild && <ToggleTile on={help.audio} name="Listen first" desc="hear the sentence" onClick={() => setHelpOpt({ audio: !help.audio })} />}
           </div>
-          <button type="button" className="btn btn-dark" onClick={() => setSheet(false)}>Done</button>
-          <button type="button" onClick={() => go('settings')} style={{ minHeight: 44, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--grey)' }}>
-            Category, difficulty &amp; length live in <span style={{ fontWeight: 600, color: 'var(--ink)', textDecoration: 'underline' }}>Study settings</span>
-          </button>
-        </Sheet>
+        </RoundSheet>
       )}
     </main>
   );

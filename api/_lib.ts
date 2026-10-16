@@ -58,6 +58,8 @@ export function toWord(page: { id: string; properties: Props }): Word {
     nextReview: date(p['Next review']),
     timesKnown: num(p['Times known']) ?? 0,
     timesForgot: num(p['Times forgot']) ?? 0,
+    created: (page as any).created_time,
+    partners: rel(p['Goes with']),
   };
 }
 
@@ -79,6 +81,7 @@ export function toSentence(page: { id: string; properties: Props }): Sentence {
     topics: multi(p['Topic']),
     status: ['New', 'Learning', 'Known'].includes(status) ? status : 'New',
     answerIds: rel(p['Answers']),
+    alts: text(p['Also correct']).split(/[|\n]/).map((x) => x.trim()).filter(Boolean),
   };
 }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { go } from '../App';
-import { Icon, SectionHead, Sheet, ToggleTile } from '../components';
+import { back } from '../App';
+import { Icon, SectionHead, Sheet } from '../components';
 import { LENGTHS, LEVELS, loadSettings, saveSettings, type StudySettings } from '../lib/settings';
 import { TOPICS } from '../../shared/types';
 
@@ -10,7 +10,6 @@ export default function Settings() {
   const [s, setS] = useState<StudySettings>(loadSettings);
   const [allOpen, setAllOpen] = useState(false);
   const set = (patch: Partial<StudySettings>) => setS((x) => ({ ...x, ...patch }));
-  const toggle = (k: keyof StudySettings['help']) => setS((x) => ({ ...x, help: { ...x.help, [k]: !x.help[k] } }));
 
   const top = TOPICS.slice(0, 8);
   const picked = TOPICS.find((t) => t.name === s.cat);
@@ -28,8 +27,8 @@ export default function Settings() {
     <main className="screen">
       <div className="scroll pad" style={{ gap: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: -12 }}>
-          <button type="button" className="icon-btn" aria-label="Back without saving" onClick={() => go('')}><Icon.Back /></button>
-          <p className="hand accent tilt" style={{ margin: 0, fontSize: 17 }}>applies to every game</p>
+          <button type="button" className="icon-btn" aria-label="Back without saving" onClick={back}><Icon.Back /></button>
+          <p className="hand accent tilt" style={{ margin: 0, fontSize: 17 }}>defaults for every game</p>
         </div>
 
         <header style={{ background: 'var(--sage)', border: '2px solid var(--ink)', borderRadius: 22, padding: '20px 18px 20px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -86,16 +85,11 @@ export default function Settings() {
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>{LENGTHS.find((n) => n.id === s.len)?.note}</p>
         </section>
 
-        <section className="sec" aria-labelledby="help-h">
-          <SectionHead id="help-h" title="Help" zh="提示" py="tíshì" />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
-            <ToggleTile on={s.help.pinyin} name="Pinyin" desc="under hanzi" onClick={() => toggle('pinyin')} />
-            <ToggleTile on={s.help.extra} name="Extra tiles" desc="decoy words" onClick={() => toggle('extra')} />
-            <ToggleTile on={s.help.audio} name="Auto-play" desc="hear words" onClick={() => toggle('audio')} />
-          </div>
-        </section>
+        <p className="muted" style={{ margin: 0, fontSize: 13, lineHeight: 1.4, background: 'var(--paper)', border: '1.5px dashed var(--ink)', borderRadius: 12, padding: '10px 12px' }}>
+          Each game starts from these and then remembers its own choices. Help options (pinyin, extra tiles, audio) live inside each game — tap the sliders button at the top while playing.
+        </p>
 
-        <button type="button" className="btn btn-dark" style={{ marginTop: 'auto' }} onClick={() => { saveSettings(s); go(''); }}>
+        <button type="button" className="btn btn-dark" style={{ marginTop: 'auto' }} onClick={() => { saveSettings(s); back(); }}>
           Save settings <Icon.Check size={20} color="#EE6A2C" />
         </button>
       </div>

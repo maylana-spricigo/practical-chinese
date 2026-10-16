@@ -7,6 +7,14 @@ import { authorize, fail, notion, querySentences, shuffle, toSentence } from './
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!authorize(req, res)) return;
   const q = req.query as Record<string, string>;
+  if (q.game === 'all') {
+    // Everything, for the phone's local copy (rounds are built on the phone).
+    try {
+      const sentences = await querySentences();
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).json({ sentences, available: sentences.length } satisfies SentencesResponse);
+    } catch (err) { return fail(res, err); }
+  }
   const game = q.game === 'ask' ? 'ask' : 'build';
   const count = Math.max(1, Math.min(30, Number(q.count) || 5));
   const topic = q.topic && q.topic !== 'all' ? q.topic : null;

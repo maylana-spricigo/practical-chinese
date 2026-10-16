@@ -1,7 +1,7 @@
 # Practical Chinese
 
 A small PWA for studying Chinese with your own **词典 (cídiǎn)** Notion database.
-Home, study settings, **Flashcards** (spaced repetition saved to Notion), **Match the Pairs**, **Build the Sentence**, **Ask the Question**, **Dictionary** and **Progress**.
+Home, study settings, **Flashcards** (Recognize with spaced repetition saved to Notion, or Recall as practice), **Match the Pairs**, **Word Partners**, **Build the Sentence** (exam-style 连词成句), **Ask the Question**, **Dictionary** and **Progress**.
 
 ## How it works
 
@@ -10,8 +10,12 @@ phone (PWA, React)  ──►  /api/* on Vercel (keeps your Notion key secret)  
 ```
 
 - `src/` — the app (screens follow the Claude Design canvas: Home, Study settings, Flashcards + loading/empty/error/sync states).
+- The phone keeps a copy of 词典 and 句子 (`src/lib/store.ts`), so screens open instantly; it refreshes from Notion in the background whenever the app opens. Rounds are built on the phone (`shared/rounds.ts`).
+- Each game remembers its own round (topic, difficulty, length) and options — set them with the sliders button inside the game. Study settings are the starting defaults.
+- Notion fields used by the newer games: **Goes with** (词典, relation to other words — Word Partners pairs, e.g. 喝 → 茶) and **Also correct** (句子, other word orders that are right too, separated by |).
 - `api/` — serverless functions:
-  - `GET /api/words` — words for a round (Easy = studied, Hard = new, Medium = half/half), today's review, or all (Dictionary).
+  - `GET /api/words?mode=all` — every word (newest first) for the phone's copy; also rounds/review for older clients.
+  - `GET /api/sentences?game=all` — every sentence for the phone's copy.
   - `POST /api/review` — saves one Flashcards answer (Box, Status, Next review, Last reviewed, counters).
   - `GET /api/sentences` — sentences from 句子 for Build the Sentence, or questions + their answers for Ask the Question.
   - `POST /api/practice` — Match/Build/Ask log practice (Times known/forgot, Last reviewed) without changing a word's box.

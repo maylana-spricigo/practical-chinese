@@ -1,16 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { go } from '../App';
-import { Icon, SectionHead, Sheet } from '../components';
-import { GameTopBar, PracticeDone } from '../components/game';
+import { Icon } from '../components';
+import { GameTopBar, PracticeDone, RoundSheet, roundLabel, useRound } from '../components/game';
 import { ErrorState, Loading, Message } from '../components/states';
-import { ApiError, fetchRound } from '../lib/api';
 import { addActivity, addRound } from '../lib/history';
-import { LEVELS, loadSettings, saveSettings, type StudySettings } from '../lib/settings';
+import { LEVELS, type Round } from '../lib/settings';
 import { speak } from '../lib/speak';
+import { patchWord, useStore } from '../lib/store';
 import { enqueue, useSync } from '../lib/sync';
 import { read, write } from '../lib/storage';
 import { localToday } from '../../shared/srs';
-import { PAIRS_SIZE, TOPICS, type Word } from '../../shared/types';
+import { pickWords } from '../../shared/rounds';
+import { PAIRS_SIZE, type Word } from '../../shared/types';
 import KeyPrompt from './KeyPrompt';
 
 type Side = 'hz' | 'en' | 'py' | 'au';
@@ -27,9 +27,10 @@ const GAP = 12;
 const MID = 54;
 
 export default function Match() {
-  const [settings, setSettings] = useState<StudySettings>(loadSettings);
+  const { round, epoch, again, apply } = useRound('match');
+  const store = useStore('words');
+  const ready = !!store.items;
   const [phase, setPhase] = useState<'loading' | 'error' | 'empty' | 'play' | 'done'>('loading');
-  const [error, setError] = useState<ApiError | null>(null);
   const [words, setWords] = useState<Word[]>([]);
   const [left, setLeft] = useState<number[]>([]);
   const [right, setRight] = useState<number[]>([]);
@@ -41,7 +42,6 @@ export default function Match() {
   const [mistakes, setMistakes] = useState(0);
   const [pairType, setPairType] = useState<PairId>(() => read<PairId>('pc.pairType', 'hz_mean'));
   const [sheet, setSheet] = useState(false);
-  const [reload, setReload] = useState(0);
   const sync = useSync();
   const PT = PAIRS.find((p) => p.id === pairType) ?? PAIRS[0];
 
@@ -52,21 +52,17 @@ export default function Match() {
   };
 
   useEffect(() => {
-    let live = true;
-    setPhase('loading');
-    fetchRound({ mode: 'round', topic: settings.cat, level: settings.level, len: settings.len, count: PAIRS_SIZE[settings.len] })
-      .then((r) => {
-        if (!live) return;
-        // Distinct meanings and pinyin so every pair has exactly one match.
-        const seen = new Set<string>();
-        const ws = r.words.filter((w) => w.en && w.py && !seen.has(w.en.toLowerCase() + '|' + w.hz) && seen.add(w.en.toLowerCase() + '|' + w.hz));
-        setWords(ws);
-        if (ws.length < 2) { setPhase('empty'); return; }
-        start(ws.map((_, k) => k));
-      })
-      .catch((e) => { if (live) { setError(e); setPhase('error'); } });
-    return () => { live = false; };
-  }, [settings, reload]);
+    if (!ready) return;
+    const r = pickWords(store.items!, { topic: round.cat, level: round.level, count: PAIRS_SIZE[round.len] * 2, today: localToday() });
+    // Distinct hanzi, meanings and pinyin so every pair has exactly one match.
+    const seen = new Set<string>();
+    const ok = (k: string) => !seen.has(k) && !!seen.add(k);
+    const ws = r.words.filter((w) => w.en && w.py && ok('h' + w.hz) && ok('e' + w.en.toLowerCase()) && ok('p' + w.py)).slice(0, PAIRS_SIZE[round.len]);
+    setWords(ws);
+    if (ws.length < 2) { setPhase('empty'); return; }
+    start(ws.map((_, k) => k));
+  }, [ready, epoch]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!ready && store.error) setPhase('error'); }, [ready, store.error]);
 
   // ---- layout: tiles fill the space, lines are drawn between their centers ----
   const area = useRef<HTMLDivElement>(null);
@@ -89,6 +85,7 @@ export default function Match() {
       const m = new Set(matched); m.add(l);
       setMatched(m);
       enqueue({ type: 'practice', kind: 'word', id: words[l].id, correct: !missed.has(l), today: localToday() });
+      patchWord(words[l].id, missed.has(l) ? { timesForgot: words[l].timesForgot + 1 } : { timesKnown: words[l].timesKnown + 1 });
       addActivity();
       if (m.size === left.length) setTimeout(() => { setPhase('done'); addRound(); }, 600);
     } else {
@@ -123,9 +120,8 @@ export default function Match() {
     return <Icon.Speaker size={28} color="currentColor" />;
   };
 
-  if (phase === 'error' && error?.status === 401) return <KeyPrompt onDone={() => setReload((x) => x + 1)} />;
-  const topic = TOPICS.find((t) => t.name === settings.cat);
-  const label = `${topic?.name ?? 'All topics'} · ${PT.short}`;
+  if (store.error?.status === 401) return <KeyPrompt onDone={() => void store.retry()} />;
+  const label = roundLabel(round, PT.short);
   const firstTry = [...matched].filter((k) => !missed.has(k)).length;
 
   return (
@@ -133,15 +129,15 @@ export default function Match() {
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 16, padding: '16px 16px calc(20px + var(--safe-bottom))' }}>
         <GameTopBar title={phase === 'play' || phase === 'done' ? <>{matched.size} <span style={{ fontWeight: 500, color: 'var(--grey)' }}>of {left.length} pairs</span></> : 'Match the Pairs'}
           label={label} progress={phase === 'loading' ? 'loading' : left.length ? matched.size / left.length : 0}
-          onOptions={() => setSheet(true)} optionsDisabled={phase !== 'play'} />
+          onOptions={() => setSheet(true)} optionsDisabled={phase === 'loading'} />
 
         {phase === 'loading' && <Loading cards={false} line="finding pairs" zh="配对" sub="getting words from your dictionary" />}
-        {phase === 'error' && <ErrorState error={error} onRetry={() => setReload((x) => x + 1)} />}
+        {phase === 'error' && <ErrorState error={store.error} onRetry={() => void store.retry()} />}
         {phase === 'empty' && (
           <Message role="status" art="空" kicker="空空的 · nothing here" title="Not enough words to match"
-            body={`Match needs at least two words with a meaning in ${topic?.name ?? 'your dictionary'} for ${LEVELS.find((l) => l.id === settings.level)?.name} rounds.`}>
-            {(settings.level !== 'medium' || settings.cat !== 'all') && <button type="button" className="btn btn-dark" onClick={() => { const nx = { ...settings, level: 'medium' as const, cat: 'all' }; saveSettings(nx); setSettings(nx); }}>Play all topics · Medium <Icon.Arrow /></button>}
-            <button type="button" className="btn" onClick={() => go('settings')}>Change settings</button>
+            body={`Match needs at least two words with a meaning in ${round.cat === 'all' ? 'your dictionary' : round.cat} for ${LEVELS.find((l) => l.id === round.level)?.name} rounds.`}>
+            {(round.level !== 'medium' || round.cat !== 'all') && <button type="button" className="btn btn-dark" onClick={() => apply({ ...round, level: 'medium', cat: 'all' })}>Play all topics · Medium <Icon.Arrow /></button>}
+            <button type="button" className="btn" onClick={() => setSheet(true)}>Change round</button>
           </Message>
         )}
 
@@ -192,29 +188,24 @@ export default function Match() {
           <PracticeDone kicker="太好了 · all matched!" a={{ label: 'First try', n: firstTry }} b={{ label: 'Mistakes', n: mistakes }}
             listTitle="Words to practise" items={[...missed].map((k) => ({ top: words[k].hz, sub: `${words[k].py} · ${words[k].en}` }))}
             emptyMsg="全对！ no mistakes" retryLabel={`Retry the ${missed.size} I missed`} onRetry={() => start([...missed])}
-            onPlayAgain={() => setReload((x) => x + 1)} sync={sync} />
+            onPlayAgain={again} onChangeRound={() => setSheet(true)} sync={sync} />
         )}
       </div>
 
       {sheet && (
-        <Sheet label="Pair type" onClose={() => setSheet(false)}>
-          <SectionHead title="Pair type" zh="配对方式" py="pèiduì fāngshì" />
+        <RoundSheet game="match" title="Match the Pairs" zh="配对" py="pèiduì" round={round} onClose={() => setSheet(false)} onApply={(r: Round) => { apply(r); setSheet(false); }}>
           <div role="radiogroup" aria-label="Pair type" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
             {PAIRS.map((p) => (
               <button key={p.id} type="button" role="radio" className="choice" aria-checked={p.id === pairType}
-                onClick={() => { if (p.id === pairType) return; setPairType(p.id); write('pc.pairType', p.id); start(words.map((_, k) => k)); }}
+                onClick={() => { if (p.id === pairType) return; setPairType(p.id); write('pc.pairType', p.id); if (phase === 'play') start(words.map((_, k) => k)); }}
                 style={{ minHeight: 64, padding: '10px 12px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 4, textAlign: 'left' }}>
                 <span style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.1 }}>{p.name}</span>
                 <span style={{ fontSize: 12, lineHeight: 1.2, opacity: 0.8 }}>{p.desc}</span>
               </button>
             ))}
           </div>
-          <p className="hand muted" style={{ margin: 0, fontSize: 15, textAlign: 'center' }}>changing the pair type starts a new round</p>
-          <button type="button" className="btn btn-dark" onClick={() => setSheet(false)}>Done</button>
-          <button type="button" onClick={() => go('settings')} style={{ minHeight: 44, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--grey)' }}>
-            Category, difficulty &amp; length live in <span style={{ fontWeight: 600, color: 'var(--ink)', textDecoration: 'underline' }}>Study settings</span>
-          </button>
-        </Sheet>
+          <p className="hand muted" style={{ margin: 0, fontSize: 15, textAlign: 'center' }}>changing the pair type restarts the pairs</p>
+        </RoundSheet>
       )}
     </main>
   );

@@ -14,7 +14,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (mode === 'all') {
-      const words = await queryAll(undefined, [{ property: 'Hanzi', direction: 'ascending' }]);
+      const words = await queryAll(undefined, [{ timestamp: 'created_time', direction: 'descending' }]);
       return send(res, { words, available: words.length });
     }
 

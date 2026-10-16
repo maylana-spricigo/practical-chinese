@@ -1,137 +1,78 @@
-import { useEffect, useState } from 'react';
 import { go } from '../App';
 import { Icon } from '../components';
 import { ART } from '../illustrations';
-import { ApiError, DEMO, fetchStats } from '../lib/api';
-import { streak, thisWeek } from '../lib/history';
-import { LENGTHS, LEVELS, useSettings } from '../lib/settings';
-import { useSync } from '../lib/sync';
-import { TOPICS, type Stats } from '../../shared/types';
+import { DEMO } from '../lib/api';
+import { streak } from '../lib/history';
+import { useStore } from '../lib/store';
 import KeyPrompt from './KeyPrompt';
 
+const GAMES = [
+  { route: 'match', art: 'match', title: 'Match the Pairs', zh: '配对', py: 'pèiduì', desc: 'hanzi ↔ meaning' },
+  { route: 'partners', art: 'partners', title: 'Word Partners', zh: '搭配', py: 'dāpèi', desc: 'which words go together' },
+  { route: 'build', art: 'build', title: 'Build the Sentence', zh: '连词成句', py: 'liáncí chéngjù', desc: 'put the words in order' },
+  { route: 'ask', art: 'ask', title: 'Ask the Question', zh: '提问', py: 'tíwèn', desc: 'ask about the answer' },
+];
+
 export default function Home() {
-  const [settings] = useSettings();
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [err, setErr] = useState<ApiError | null>(null);
-  const [reload, setReload] = useState(0);
-  const sync = useSync();
-
-  useEffect(() => {
-    let live = true;
-    setErr(null);
-    fetchStats().then((s) => live && setStats(s)).catch((e) => live && setErr(e));
-    return () => { live = false; };
-  }, [reload, sync.pending === 0]);
-
-  if (err?.status === 401) return <KeyPrompt onDone={() => setReload((n) => n + 1)} />;
-
-  const topic = TOPICS.find((t) => t.name === settings.cat);
-  const helpBits = [settings.help.pinyin && 'Pinyin', settings.help.extra && 'Extra tiles', settings.help.audio && 'Auto-play'].filter(Boolean);
-  const week = thisWeek();
+  const store = useStore('words'); // warms the local copy so games open instantly
+  useStore('sentences');
+  if (store.error?.status === 401) return <KeyPrompt onDone={() => void store.retry()} />;
   const days = streak();
-  const due = stats?.due ?? 0;
 
   return (
     <main className="screen">
-      <div className="scroll" style={{ padding: '28px 16px 28px', gap: 28 }}>
-        <header style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '8px 4px 0' }}>
-          <h1 className="serif" style={{ margin: 0, fontSize: 46, lineHeight: 0.98, letterSpacing: '-0.5px' }}>Practical<br />Chinese</h1>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <p className="hand accent" style={{ margin: 0, fontSize: 22 }}>one word at a time.</p>
-            <svg width="210" height="10" viewBox="0 0 210 10" fill="none" aria-hidden="true"><path d="M2 7 C50 2 110 3 208 5" stroke="#EE6A2C" strokeWidth="2.5" strokeLinecap="round" /></svg>
+      <div className="scroll" style={{ padding: '18px 16px 20px', gap: 18 }}>
+        <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <span aria-hidden="true" style={{ flex: 'none', lineHeight: 0 }} dangerouslySetInnerHTML={{ __html: ART.appIcon }} />
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <h1 className="serif" style={{ margin: 0, fontSize: 22, lineHeight: 1 }}>Practical Chinese</h1>
+              <p className="hand accent" style={{ margin: '2px 0 0', fontSize: 14, lineHeight: 1 }}>{DEMO ? 'demo mode · sample words' : 'one word at a time.'}</p>
+            </div>
           </div>
-          {DEMO && <span className="pill" style={{ alignSelf: 'flex-start', background: 'var(--pink)' }}>demo mode · sample words</span>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
+            <button type="button" onClick={() => go('progress')} aria-label={`${days}-day streak, open Progress`} style={{ height: 36, padding: '0 10px 0 8px', borderRadius: 999, border: '2px solid var(--ink)', background: 'var(--paper)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14, fontWeight: 700 }}>
+              <Icon.Fire on={days > 0} />{days}
+            </button>
+            <button type="button" className="icon-btn" style={{ width: 40, height: 40 }} aria-label="Study settings" onClick={() => go('settings')}><Icon.Gear /></button>
+          </div>
         </header>
 
-        {/* Today */}
-        <section aria-labelledby="today-h" style={{ background: 'var(--green)', color: 'var(--cream)', border: '2px solid var(--ink)', borderRadius: 22, padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <p className="hand" style={{ margin: 0, fontSize: 17, color: 'var(--pink)' }}>today · <span className="hz" style={{ fontWeight: 400 }}>今天</span></p>
-              <h2 id="today-h" style={{ margin: 0, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <span className={`serif ${stats ? '' : 'pulse'}`} style={{ fontSize: 52, lineHeight: 0.9 }}>{stats ? due : err ? '–' : '··'}</span>
-                <span style={{ fontFamily: 'var(--serif)', fontWeight: 500, fontSize: 20, lineHeight: 1.1 }}>{due === 1 ? 'word' : 'words'}<br />to review</span>
-              </h2>
+        {/* Flashcards: the main game */}
+        <section aria-labelledby="fc-h" style={{ background: 'var(--green)', color: 'var(--cream)', border: '2px solid var(--ink)', borderRadius: 26, padding: '24px 18px 16px', display: 'flex', flexDirection: 'column', gap: 14, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+              <h2 id="fc-h" className="serif" style={{ margin: 0, fontSize: 32, lineHeight: 1 }}>Flashcards</h2>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: '#E6DFD3' }}><span lang="zh-Hans" className="hz" style={{ fontWeight: 400 }}>单词卡</span> · dāncí kǎ</p>
             </div>
-            <span className="pill" style={{ background: 'var(--cream)', color: 'var(--ink)', border: '2px solid var(--ink)', fontSize: 13, padding: '6px 12px 6px 8px' }}>
-              <svg width="18" height="20" viewBox="0 0 18 20" fill="none" aria-hidden="true"><path d="M9 1 C10 5 15 7 15 12.5 C15 16.5 12.5 19 9 19 C5.5 19 3 16.5 3 13 C3 10 5 8.5 6 6.5 C7 9 8 9.5 8.5 9.5 C8.5 6.5 8 4 9 1 Z" fill={days ? '#EE6A2C' : '#E6DFD3'} stroke="#1C1A18" strokeWidth="1.8" strokeLinejoin="round" /></svg>
-              {days}-day streak
-            </span>
-          </div>
-          <div aria-label={`This week: studied ${week.filter((d) => d.done).length} days`} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 6 }}>
-            {week.map((d, i) => (
-              <span key={i} aria-hidden="true" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 30, height: 30, borderRadius: '50%', border: `2px solid ${d.isToday ? '#EE6A2C' : d.done ? '#1C1A18' : 'rgba(243,237,227,0.45)'}`, background: d.done ? 'var(--sage)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {d.done && <Icon.Check size={14} color="#1C1A18" />}
-                </span>
-                <span style={{ fontSize: 11, fontWeight: 600, color: d.isToday ? 'var(--pink)' : '#E6DFD3' }}>{d.label}</span>
-              </span>
-            ))}
-          </div>
-          {err ? (
-            <>
-              <p role="alert" style={{ margin: 0, fontSize: 13, lineHeight: 1.35, color: 'var(--pink)' }}>Couldn’t reach Notion: {err.message || 'no connection'}</p>
-              <button type="button" className="btn btn-light" onClick={() => setReload((n) => n + 1)}>Try again</button>
-            </>
-          ) : (
-            <button type="button" className="btn btn-light" disabled={!stats || due === 0} onClick={() => go('review')}>
-              {stats && due === 0 ? 'All caught up 好' : <>Review now <Icon.Arrow color="#D2541A" /></>}
+            <button type="button" onClick={() => go('flashcards?setup')} aria-label="Set up Flashcards" style={{ flex: 'none', width: 34, height: 34, borderRadius: '50%', border: 'none', background: 'rgba(243,237,227,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.85 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7 H20 M4 17 H20" stroke="#F3EDE3" strokeWidth="2" strokeLinecap="round" /><circle cx="9" cy="7" r="2.6" fill="#264434" stroke="#F3EDE3" strokeWidth="2" /><circle cx="15" cy="17" r="2.6" fill="#264434" stroke="#F3EDE3" strokeWidth="2" /></svg>
             </button>
-          )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 }}>
+            <p className="hand" style={{ margin: '0 0 6px', flex: 1, minWidth: 0, fontSize: 18, lineHeight: 1.25, color: '#C5D3B6' }}>review what’s due,<br />then meet new words.</p>
+            <span aria-hidden="true" style={{ flex: 'none', lineHeight: 0, margin: '-8px -10px -4px 0' }} dangerouslySetInnerHTML={{ __html: ART.hero }} />
+          </div>
+          <button type="button" onClick={() => go('flashcards')} className="btn" style={{ minHeight: 56, borderRadius: 14, background: 'var(--cream)', color: 'var(--ink)', justifyContent: 'space-between' }}>
+            Start <Icon.Arrow color="#1C1A18" />
+          </button>
         </section>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '0 4px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <h2 className="serif" style={{ margin: 0, fontSize: 30, lineHeight: 1 }}>Exercises</h2>
-            <p className="muted" style={{ margin: 0, fontSize: 14 }}><span className="hz" style={{ fontWeight: 400 }}>练习</span> · liànxí</p>
-          </div>
-          <p className="hand accent" style={{ margin: '0 0 4px', fontSize: 17, transform: 'rotate(-4deg)' }}>pick a game ↓</p>
-        </div>
-
-        {/* Study settings */}
-        <button type="button" onClick={() => go('settings')} aria-label="Edit your study settings" style={{ marginTop: -12, background: 'var(--paper)', border: '2px solid var(--ink)', borderRadius: 18, padding: '14px 14px 14px 16px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}>
-          <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-              <span className="serif" style={{ fontSize: 18, lineHeight: 1 }}>Your study settings</span>
-              <span className="muted" style={{ fontSize: 12 }}><span className="hz" style={{ fontWeight: 400 }}>设置</span> · shèzhì</span>
-            </span>
-            <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              <span className="pill" style={{ fontSize: 13 }}><span className="hz">{topic?.zh ?? '全部'}</span> {topic?.name ?? 'All topics'}</span>
-              <span className="pill" style={{ fontSize: 13 }}>{LEVELS.find((l) => l.id === settings.level)?.name}</span>
-              <span className="pill" style={{ fontSize: 13 }}>{LENGTHS.find((l) => l.id === settings.len)?.name}</span>
-              <span className="pill" style={{ fontSize: 13 }}>{helpBits.length ? helpBits.join(' · ') : 'No help'}</span>
-            </span>
-          </span>
-          <span aria-hidden="true" className="icon-btn" style={{ background: 'var(--cream)' }}><Icon.Sliders /></span>
-        </button>
-
-        <section aria-label="Games" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <GameCard art="flashcards" bg="var(--orange)" title="Flashcards" zh="单词卡" py="dāncí kǎ" desc="Flip, recall and review the words you’re learning." onPlay={() => go('flashcards')} />
-          <GameCard art="match" bg="var(--pink)" title="Match the Pairs" zh="配对" py="pèiduì" desc="Connect each character to its meaning." onPlay={() => go('match')} />
-          <GameCard art="build" bg="var(--paper)" title="Build the Sentence" zh="连词成句" py="liáncí chéngjù" desc="Put the words in the right order." onPlay={() => go('build')} />
-          <GameCard art="ask" bg="var(--green)" dark title="Ask the Question" zh="提问" py="tíwèn" desc="Read the answer, then build the question." onPlay={() => go('ask')} />
+        <section aria-labelledby="more-h" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <h2 id="more-h" className="serif" style={{ margin: '0 2px', fontSize: 22, lineHeight: 1 }}>More practice <span style={{ fontFamily: 'var(--sans)', fontWeight: 500, fontSize: 13, color: 'var(--grey)' }}><span className="hz" style={{ fontWeight: 400 }}>练习</span> · liànxí</span></h2>
+          {GAMES.map((g) => (
+            <button key={g.route} type="button" onClick={() => go(g.route)} aria-label={`Play ${g.title}`} style={{ height: 96, background: 'var(--paper)', border: '2px solid var(--ink)', borderRadius: 20, padding: '8px 14px 8px 8px', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}>
+              <span aria-hidden="true" style={{ flex: 'none', width: 120, height: 76, borderRadius: 14, border: '2px solid var(--ink)', background: ART[g.art + 'Bg'], display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }} dangerouslySetInnerHTML={{ __html: ART[g.art] }} />
+              <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span className="serif" style={{ fontSize: 19, lineHeight: 1.05 }}>{g.title}</span>
+                <span className="muted" style={{ fontSize: 12, fontWeight: 500 }}><span lang="zh-Hans" className="hz" style={{ fontSize: 13, fontWeight: 400, color: '#3E3A35' }}>{g.zh}</span> · {g.py}</span>
+                <span className="hand accent" style={{ fontSize: 14, lineHeight: 1.1 }}>{g.desc}</span>
+              </span>
+              <Icon.Arrow color="#1C1A18" />
+            </button>
+          ))}
         </section>
       </div>
     </main>
-  );
-}
-
-function GameCard({ art, bg, dark, title, zh, py, desc, onPlay }: { art: string; bg: string; dark?: boolean; title: string; zh: string; py: string; desc: string; onPlay?: () => void }) {
-  return (
-    <article style={{ background: bg, color: dark ? 'var(--cream)' : 'var(--ink)', border: '2px solid var(--ink)', borderRadius: 24, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <span aria-hidden="true" style={{ display: 'block', lineHeight: 0 }} dangerouslySetInnerHTML={{ __html: ART[art] }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <h3 className="serif" style={{ margin: 0, fontSize: 28, lineHeight: 1 }}>{title}</h3>
-          <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: dark ? '#E6DFD3' : undefined }}><span className="hz" style={{ fontWeight: 400 }}>{zh}</span> · {py}</p>
-          <p style={{ margin: '4px 0 0', fontSize: 14, lineHeight: 1.35, maxWidth: 190, color: dark ? '#E6DFD3' : undefined }}>{desc}</p>
-        </div>
-        {onPlay ? (
-          <button type="button" onClick={onPlay} style={{ minHeight: 44, padding: '0 18px', borderRadius: 10, border: '2px solid var(--ink)', background: dark ? 'var(--cream)' : 'var(--ink)', color: dark ? 'var(--ink)' : 'var(--cream)', fontFamily: 'var(--hand)', fontSize: 18, whiteSpace: 'nowrap' }}>Play →</button>
-        ) : (
-          <span className="pill" style={{ borderColor: dark ? 'var(--cream)' : 'var(--ink)', fontFamily: 'var(--hand)', fontSize: 15, fontWeight: 400 }}>soon</span>
-        )}
-      </div>
-    </article>
   );
 }

@@ -16,6 +16,10 @@ export interface Word {
   nextReview: string | null;
   timesKnown: number;
   timesForgot: number;
+  /** When the word was added to Notion (ISO). */
+  created?: string;
+  /** "Goes with" in Notion: words this one combines with (Word Partners). */
+  partners?: string[];
 }
 
 export type Level = 'easy' | 'medium' | 'hard';
@@ -74,6 +78,8 @@ export interface Sentence {
   answer?: Sentence;
   /** Pinyin per token, when the token count matches the pinyin syllables (best effort). */
   tokenPy?: string[];
+  /** "Also correct" in Notion: other word orders that are right too. */
+  alts?: string[];
 }
 
 export interface SentencesResponse { sentences: Sentence[]; available: number }
@@ -87,5 +93,16 @@ export interface StatusRequest { id: string; status: Status; today: string }
 export interface TopicStat { topic: string; total: number; New: number; Learning: number; Known: number }
 export interface FullStats extends Stats { byTopic: TopicStat[] }
 
+export type Game = 'flashcards' | 'match' | 'partners' | 'build' | 'ask';
+
 export const PAIRS_SIZE: Record<Length, number> = { short: 4, medium: 6, long: 8 };
 export const SENTENCE_SIZE: Record<Length, number> = { short: 5, medium: 10, long: 15 };
+
+export const GAME_COUNTS: Record<Game, Record<Length, number>> = {
+  flashcards: ROUND_SIZE,
+  match: PAIRS_SIZE,
+  partners: PAIRS_SIZE,
+  build: SENTENCE_SIZE,
+  ask: SENTENCE_SIZE,
+};
+export const GAME_UNIT: Record<Game, string> = { flashcards: 'cards', match: 'pairs', partners: 'pairs', build: 'sentences', ask: 'questions' };

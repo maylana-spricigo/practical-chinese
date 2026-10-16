@@ -67,8 +67,13 @@ export async function fetchStats(): Promise<FullStats> {
 }
 
 export async function fetchAllWords(): Promise<Word[]> {
-  if (DEMO) { await wait(400); return [...demoState].sort((a, b) => a.py.localeCompare(b.py)); }
+  if (DEMO) { await wait(400); return [...demoState]; }
   return (await call<WordsResponse>(`/api/words?mode=all&today=${localToday()}`)).words;
+}
+
+export async function fetchAllSentences(): Promise<Sentence[]> {
+  if (DEMO) { await wait(300); return DEMO_SENTENCES; }
+  return (await call<SentencesResponse>('/api/sentences?game=all')).sentences;
 }
 
 export async function fetchSentences(opts: { game: 'build' | 'ask'; topic: string; level: Level; count: number }): Promise<SentencesResponse> {

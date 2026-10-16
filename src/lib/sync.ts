@@ -58,7 +58,14 @@ export async function flush() {
   status = 'idle';
   running = false;
   emit();
+  const d = [...drained]; drained.clear(); d.forEach((f) => f());
 }
+
+const drained = new Set<() => void>();
+/** Number of answers still waiting to reach Notion. */
+export function pendingCount() { return queue.length; }
+/** Runs once the queue is empty (used to refresh the local copy without losing unsent answers). */
+export function onDrained(f: () => void) { if (!queue.length) f(); else drained.add(f); }
 
 export function useSync() {
   const [, tick] = useState(0);
