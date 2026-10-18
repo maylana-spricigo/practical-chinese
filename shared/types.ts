@@ -20,6 +20,8 @@ export interface Word {
   created?: string;
   /** "Goes with" in Notion: words this one combines with (Word Partners). */
   partners?: string[];
+  /** "Lesson" in Notion (e.g. S6, I3, W2). */
+  lessons?: string[];
 }
 
 export type Level = 'easy' | 'medium' | 'hard';

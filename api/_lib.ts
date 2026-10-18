@@ -60,6 +60,7 @@ export function toWord(page: { id: string; properties: Props }): Word {
     timesForgot: num(p['Times forgot']) ?? 0,
     created: (page as any).created_time,
     partners: rel(p['Goes with']),
+    lessons: multi(p['Lesson']),
   };
 }
 

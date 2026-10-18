@@ -18,16 +18,22 @@ export function useRound(game: Game) {
 }
 
 export const roundLabel = (r: Round, extra?: string) =>
-  [r.cat === 'all' ? 'All topics' : r.cat, extra ?? LEVELS.find((l) => l.id === r.level)?.name].filter(Boolean).join(' · ');
+  [r.lessons?.length ? r.lessons.join(' + ') + (r.cat === 'all' ? '' : ` · ${r.cat}`) : r.cat === 'all' ? 'All topics' : r.cat, extra ?? LEVELS.find((l) => l.id === r.level)?.name].filter(Boolean).join(' · ');
+
+const sameSet = (a: string[] = [], b: string[] = []) => a.length === b.length && a.every((x) => b.includes(x));
 
 const TOPIC_CHIPS = [{ name: 'all', zh: '全部', label: 'All topics' }, ...[...TOPICS].sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({ ...t, label: t.name }))];
 
 /** Round settings sheet used by every game: this game's round + the in-game options passed as children. */
-export function RoundSheet({ game, title, zh, py, round, onApply, onClose, children }: {
+export function RoundSheet({ game, title, zh, py, round, lessons, onApply, onClose, children }: {
   game: Game; title: string; zh: string; py: string; round: Round; onApply: (r: Round) => void; onClose: () => void; children?: ReactNode;
+  /** Lessons to choose from (word games only). */
+  lessons?: string[];
 }) {
   const [d, setD] = useState<Round>(round);
-  const changed = d.cat !== round.cat || d.level !== round.level || d.len !== round.len;
+  const changed = d.cat !== round.cat || d.level !== round.level || d.len !== round.len || !sameSet(d.lessons, round.lessons);
+  const picked = d.lessons ?? [];
+  const toggleLesson = (l: string) => setD({ ...d, lessons: picked.includes(l) ? picked.filter((x) => x !== l) : [...picked, l] });
   const counts = GAME_COUNTS[game];
   const label = { fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase' as const, color: 'var(--grey)', margin: 0 };
   const sub = (z: string, p: string) => <span style={{ fontWeight: 500, color: 'var(--grey)' }}><span className="hz" style={{ fontWeight: 400 }}>{z}</span> · {p}</span>;
@@ -36,6 +42,20 @@ export function RoundSheet({ game, title, zh, py, round, onApply, onClose, child
       <div className="sec-head"><h2>{title}</h2><p><span className="hz" style={{ fontWeight: 400 }}>{zh}</span> · {py}</p></div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 14, borderBottom: '1.5px dashed var(--ink)' }}>
         <p style={label}>This game’s round</p>
+        {lessons && lessons.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span>Lessons {sub('课', 'kè')}</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--grey)' }}>{picked.length ? `${picked.length} picked` : 'pick one or more'}</span>
+            </p>
+            <div role="group" aria-label="Lessons" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <button type="button" className="pill choice" aria-pressed={!picked.length} onClick={() => setD({ ...d, lessons: [] })} style={{ height: 36, fontSize: 13, borderRadius: 999 }}>All lessons</button>
+              {lessons.map((l) => (
+                <button key={l} type="button" className="pill choice" aria-pressed={picked.includes(l)} onClick={() => toggleLesson(l)} style={{ height: 36, minWidth: 44, justifyContent: 'center', fontSize: 13, borderRadius: 999 }}>{l}</button>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Topic {sub('类别', 'lèibié')}</p>
           <div className="scroll" role="group" aria-label="Topic" style={{ flexDirection: 'row', gap: 6, overflowX: 'auto', overflowY: 'hidden', margin: '0 -16px', padding: '2px 16px' }}>
@@ -71,7 +91,7 @@ export function RoundSheet({ game, title, zh, py, round, onApply, onClose, child
       </div>
       {children && <><p style={label}>During the game</p>{children}</>}
       <button type="button" className="btn btn-dark" onClick={() => (changed ? onApply(d) : onClose())}>{changed ? 'Start new round' : 'Done'}</button>
-      <button type="button" onClick={() => setD(loadSettings())} style={{ minHeight: 44, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--grey)' }}>
+      <button type="button" onClick={() => setD({ ...loadSettings(), lessons: [] })} style={{ minHeight: 44, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--grey)' }}>
         Reset to <span style={{ fontWeight: 600, color: 'var(--ink)', textDecoration: 'underline' }}>Study settings</span> defaults
       </button>
     </Sheet>

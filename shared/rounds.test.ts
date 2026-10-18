@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeStats, pickPartners, pickSentences, pickWords } from './rounds';
+import { computeStats, lessonList, pickPartners, pickSentences, pickWords } from './rounds';
 import type { Sentence, Word } from './types';
 import { tilesPinyin } from '../src/lib/py';
 
@@ -46,5 +46,15 @@ describe('pinyin in context', () => {
   });
   it('keeps erhua and multi-character tiles', () => {
     expect(tilesPinyin('你去哪儿？', ['你', '去', '哪儿'])).toEqual(['nǐ', 'qù', 'nǎr']);
+  });
+});
+
+describe('lessons', () => {
+  it('keeps only words from the picked lessons, in course order', () => {
+    const L = (id: string, lessons: string[]) => ({ ...w(id, id, 'Learning'), lessons });
+    const ws = [L('a', ['S6']), L('b', ['S7']), L('c', ['S5']), L('d', ['I3', 'S7'])];
+    const r = pickWords(ws, { topic: 'all', lessons: ['S6', 'S7'], level: 'easy', count: 10, today: '2026-10-18' });
+    expect(r.words.map((x) => x.id).sort()).toEqual(['a', 'b', 'd']);
+    expect(lessonList(ws)).toEqual(['I3', 'S5', 'S6', 'S7']);
   });
 });

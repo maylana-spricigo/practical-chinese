@@ -3,7 +3,7 @@ import type { Word } from '../../shared/types';
 // Sample words for demo mode (VITE_DEMO=1 or ?demo in the URL). Nothing is sent to Notion.
 let n = 0;
 const W = (id: string, hz: string, py: string, en: string, topics: string[], status: Word['status'], box: number | null, nextReview: string | null, pos = 'noun', mw = '', ex = '', exPy = '', exEn = '', partners: string[] = []): Word =>
-  ({ id, hz, py, en, pos, mw, ex, exPy, exEn, topics, status, box, nextReview, timesKnown: 0, timesForgot: (n * 7) % 4, created: new Date(Date.UTC(2026, 8, 1 + n++)).toISOString(), partners });
+  ({ id, hz, py, en, pos, mw, ex, exPy, exEn, topics, status, box, nextReview, timesKnown: 0, timesForgot: (n * 7) % 4, lessons: [['S5', 'S6', 'S7', 'I3'][n % 4]], created: new Date(Date.UTC(2026, 8, 1 + n++)).toISOString(), partners });
 
 export const DEMO_WORDS: Word[] = [
   W('d1', '茶', 'chá', 'tea', ['Food'], 'Learning', 3, '2020-01-01', 'noun', '杯 bēi', '我喜欢喝茶。', 'Wǒ xǐhuan hē chá.', 'I like drinking tea.'),

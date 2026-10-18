@@ -8,7 +8,8 @@ export interface StudySettings {
   level: Level;
   len: Length;
 }
-export type Round = StudySettings;
+/** A game's round: Study settings plus, for word games, the lessons to practise (none = all). */
+export interface Round extends StudySettings { lessons?: string[] }
 
 const KEY = 'pc.settings';
 export const DEFAULTS: StudySettings = { cat: 'all', level: 'medium', len: 'short' };

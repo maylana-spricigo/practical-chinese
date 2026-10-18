@@ -9,7 +9,7 @@ import { speak } from '../lib/speak';
 import { patchWord, useStore } from '../lib/store';
 import { enqueue, useSync } from '../lib/sync';
 import { localToday } from '../../shared/srs';
-import { pickPartners, shuffle, type Partner } from '../../shared/rounds';
+import { lessonList, pickPartners, shuffle, type Partner } from '../../shared/rounds';
 import { PAIRS_SIZE } from '../../shared/types';
 import KeyPrompt from './KeyPrompt';
 
@@ -44,7 +44,7 @@ export default function Partners() {
 
   useEffect(() => {
     if (!ready) return;
-    const r = pickPartners(store.items!, { topic: round.cat, level: round.level, count: PAIRS_SIZE[round.len] });
+    const r = pickPartners(store.items!, { topic: round.cat, lessons: round.lessons, level: round.level, count: PAIRS_SIZE[round.len] });
     setPairs(r.pairs);
     if (r.pairs.length < 2) { setPhase('empty'); return; }
     start(r.pairs.map((_, k) => k));
@@ -117,7 +117,7 @@ export default function Partners() {
         {phase === 'empty' && (
           <Message role="status" art="搭" kicker="空空的 · nothing here" title="No word partners yet"
             body={`Open a word in the 词典 database in Notion (a verb like 喝) and fill “Goes with” with the words it combines with (茶, 水).${round.cat !== 'all' || round.level !== 'medium' ? ' Or try all topics at Medium.' : ''}`}>
-            {(round.level !== 'medium' || round.cat !== 'all') && <button type="button" className="btn btn-dark" onClick={() => apply({ ...round, level: 'medium', cat: 'all' })}>Play all topics · Medium <Icon.Arrow /></button>}
+            {(round.level !== 'medium' || round.cat !== 'all' || !!round.lessons?.length) && <button type="button" className="btn btn-dark" onClick={() => apply({ ...round, level: 'medium', cat: 'all', lessons: [] })}>Play everything · Medium <Icon.Arrow /></button>}
             <button type="button" className="btn" onClick={() => go('')}>Back home</button>
           </Message>
         )}
@@ -172,7 +172,7 @@ export default function Partners() {
       </div>
 
       {sheet && (
-        <RoundSheet game="partners" title="Word Partners" zh="搭配" py="dāpèi" round={round} onClose={() => setSheet(false)} onApply={(r: Round) => { apply(r); setSheet(false); }}>
+        <RoundSheet lessons={store.items ? lessonList(store.items) : []} game="partners" title="Word Partners" zh="搭配" py="dāpèi" round={round} onClose={() => setSheet(false)} onApply={(r: Round) => { apply(r); setSheet(false); }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
             <ToggleTile on={opt.pinyin} name="Pinyin" desc="under each word" onClick={() => setOpt({ pinyin: !opt.pinyin })} />
             <ToggleTile on={opt.meaning} name="Meaning" desc="English under each word" onClick={() => setOpt({ meaning: !opt.meaning })} />

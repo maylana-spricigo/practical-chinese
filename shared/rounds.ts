@@ -13,10 +13,19 @@ export function shuffle<T>(a: T[]): T[] {
 }
 
 const inTopic = (topics: string[], topic: string) => topic === 'all' || topics.includes(topic);
+/** No lessons picked = every lesson. */
+const inLessons = (w: Word, lessons?: string[]) => !lessons?.length || (w.lessons ?? []).some((l) => lessons.includes(l));
+
+/** Lessons used in your dictionary, in course order (I1, I2 … S6, S7 …). */
+export function lessonList(all: Word[]): string[] {
+  const set = new Set<string>();
+  all.forEach((w) => w.lessons?.forEach((l) => set.add(l)));
+  return [...set].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+}
 
 /** Flashcards / Match: Easy = studied words, Hard = new words, Medium = half and half. Due words come first. */
-export function pickWords(all: Word[], o: { topic: string; level: Level; count: number; today: string; mode?: 'round' | 'review' }): { words: Word[]; available: number } {
-  const pool = all.filter((w) => w.hz && inTopic(w.topics, o.topic));
+export function pickWords(all: Word[], o: { topic: string; lessons?: string[]; level: Level; count: number; today: string; mode?: 'round' | 'review' }): { words: Word[]; available: number } {
+  const pool = all.filter((w) => w.hz && inTopic(w.topics, o.topic) && inLessons(w, o.lessons));
   if (o.mode === 'review') {
     const due = pool.filter((w) => isDue(w, o.today)).sort((a, b) => (a.nextReview ?? '').localeCompare(b.nextReview ?? ''));
     return { words: shuffle(due.slice(0, o.count)), available: due.length };
@@ -42,7 +51,7 @@ export function pickWords(all: Word[], o: { topic: string; level: Level; count: 
 export interface Partner { a: Word; b: Word }
 
 /** Word Partners: pairs from "Goes with". Every word appears once and no tile fits two pairs in the same round. */
-export function pickPartners(all: Word[], o: { topic: string; level: Level; count: number }): { pairs: Partner[]; available: number } {
+export function pickPartners(all: Word[], o: { topic: string; lessons?: string[]; level: Level; count: number }): { pairs: Partner[]; available: number } {
   const byId = new Map(all.map((w) => [w.id, w]));
   const links = new Set<string>();
   const cands: Partner[] = [];
@@ -52,6 +61,7 @@ export function pickPartners(all: Word[], o: { topic: string; level: Level; coun
       if (!b || !a.hz || !b.hz || a.id === b.id) continue;
       links.add(a.id + '>' + b.id);
       if (!(inTopic(a.topics, o.topic) || inTopic(b.topics, o.topic))) continue;
+      if (!(inLessons(a, o.lessons) || inLessons(b, o.lessons))) continue;
       const st = a.status === 'New' && b.status === 'New' ? 'New' : 'seen';
       if (o.level === 'easy' && st === 'New') continue;
       if (o.level === 'hard' && st !== 'New') continue;

@@ -8,7 +8,7 @@ import { speak } from '../lib/speak';
 import { patchWord, useStore } from '../lib/store';
 import { enqueue, useSync } from '../lib/sync';
 import { INTERVALS, localToday, review, type Status } from '../../shared/srs';
-import { pickWords } from '../../shared/rounds';
+import { lessonList, pickWords } from '../../shared/rounds';
 import { ROUND_SIZE, type Word } from '../../shared/types';
 import KeyPrompt from './KeyPrompt';
 import { ErrorState, Loading, Message } from '../components/states';
@@ -38,7 +38,7 @@ export default function Flashcards({ mode }: { mode: 'round' | 'review' }) {
   // ---- build a round from the local copy of your dictionary ----
   useEffect(() => {
     if (!ready) return;
-    const r = pickWords(store.items!, { topic: round.cat, level: round.level, count: ROUND_SIZE[round.len], today: localToday(), mode });
+    const r = pickWords(store.items!, { topic: round.cat, lessons: round.lessons, level: round.level, count: ROUND_SIZE[round.len], today: localToday(), mode });
     setWords(r.words);
     setOrder(r.words.map((_, k) => k));
     setI(0); setFlipped(false); setChanges([]); setMissed([]);
@@ -256,7 +256,7 @@ export default function Flashcards({ mode }: { mode: 'round' | 'review' }) {
       </div>
 
       {sheet && (
-        <RoundSheet game="flashcards" title="Flashcards" zh="单词卡" py="dāncí kǎ" round={round} onClose={() => setSheet(false)} onApply={(r: Round) => { apply(r); setSheet(false); }}>
+        <RoundSheet lessons={store.items ? lessonList(store.items) : []} game="flashcards" title="Flashcards" zh="单词卡" py="dāncí kǎ" round={round} onClose={() => setSheet(false)} onApply={(r: Round) => { apply(r); setSheet(false); }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
             <ToggleTile on={opt.pinyin} name="Pinyin" desc="on the front" onClick={() => setOpt({ pinyin: !opt.pinyin })} />
             <ToggleTile on={opt.audio} name="Auto-play" desc="hear each card" onClick={() => setOpt({ audio: !opt.audio })} />
@@ -383,12 +383,13 @@ function Empty({ mode, round, onFix, onChange }: { mode: 'round' | 'review'; rou
       </Message>
     );
   }
-  const where = round.cat === 'all' ? 'your dictionary' : round.cat;
+  const where = [round.lessons?.length ? `lessons ${round.lessons.join(' + ')}` : '', round.cat === 'all' ? '' : round.cat].filter(Boolean).join(' · ') || 'your dictionary';
   let body: string, fix: Partial<Round>, fixLabel: string;
   if (round.level === 'hard') { body = `There are no new words in ${where} right now. Hard rounds only use words you haven’t studied yet.`; fix = { level: 'medium' }; fixLabel = 'Play Medium instead'; }
   else if (round.level === 'easy') { body = `You haven’t studied any words in ${where} yet. Easy rounds only use words you’ve already seen.`; fix = { level: 'medium' }; fixLabel = 'Play Medium instead'; }
-  else { body = `There aren’t any words in ${where} yet. Add some in Notion, or mix every topic.`; fix = { cat: 'all' }; fixLabel = 'Play all topics'; }
-  if (round.level !== 'medium' || round.cat !== 'all') {
+  else if (round.cat !== 'all') { body = `There aren’t any words in ${where} yet. Add some in Notion, or mix every topic.`; fix = { cat: 'all' }; fixLabel = 'Play all topics'; }
+  else { body = `There aren’t any words in ${where} yet. Tag them with a Lesson in Notion, or practise every lesson.`; fix = { lessons: [] }; fixLabel = 'Play all lessons'; }
+  if (round.level !== 'medium' || round.cat !== 'all' || round.lessons?.length) {
     return (
       <Message role="status" art="空" kicker="空空的 · nothing here" title="No words for this round" body={body}>
         <button type="button" className="btn btn-dark" onClick={() => onFix(fix)}>{fixLabel} <Icon.Arrow /></button>

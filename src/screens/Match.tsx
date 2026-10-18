@@ -9,7 +9,7 @@ import { patchWord, useStore } from '../lib/store';
 import { enqueue, useSync } from '../lib/sync';
 import { read, write } from '../lib/storage';
 import { localToday } from '../../shared/srs';
-import { pickWords } from '../../shared/rounds';
+import { lessonList, pickWords } from '../../shared/rounds';
 import { PAIRS_SIZE, type Word } from '../../shared/types';
 import KeyPrompt from './KeyPrompt';
 
@@ -53,7 +53,7 @@ export default function Match() {
 
   useEffect(() => {
     if (!ready) return;
-    const r = pickWords(store.items!, { topic: round.cat, level: round.level, count: PAIRS_SIZE[round.len] * 2, today: localToday() });
+    const r = pickWords(store.items!, { topic: round.cat, lessons: round.lessons, level: round.level, count: PAIRS_SIZE[round.len] * 2, today: localToday() });
     // Distinct hanzi, meanings and pinyin so every pair has exactly one match.
     const seen = new Set<string>();
     const ok = (k: string) => !seen.has(k) && !!seen.add(k);
@@ -136,7 +136,7 @@ export default function Match() {
         {phase === 'empty' && (
           <Message role="status" art="空" kicker="空空的 · nothing here" title="Not enough words to match"
             body={`Match needs at least two words with a meaning in ${round.cat === 'all' ? 'your dictionary' : round.cat} for ${LEVELS.find((l) => l.id === round.level)?.name} rounds.`}>
-            {(round.level !== 'medium' || round.cat !== 'all') && <button type="button" className="btn btn-dark" onClick={() => apply({ ...round, level: 'medium', cat: 'all' })}>Play all topics · Medium <Icon.Arrow /></button>}
+            {(round.level !== 'medium' || round.cat !== 'all' || !!round.lessons?.length) && <button type="button" className="btn btn-dark" onClick={() => apply({ ...round, level: 'medium', cat: 'all', lessons: [] })}>Play everything · Medium <Icon.Arrow /></button>}
             <button type="button" className="btn" onClick={() => setSheet(true)}>Change round</button>
           </Message>
         )}
@@ -193,7 +193,7 @@ export default function Match() {
       </div>
 
       {sheet && (
-        <RoundSheet game="match" title="Match the Pairs" zh="配对" py="pèiduì" round={round} onClose={() => setSheet(false)} onApply={(r: Round) => { apply(r); setSheet(false); }}>
+        <RoundSheet lessons={store.items ? lessonList(store.items) : []} game="match" title="Match the Pairs" zh="配对" py="pèiduì" round={round} onClose={() => setSheet(false)} onApply={(r: Round) => { apply(r); setSheet(false); }}>
           <div role="radiogroup" aria-label="Pair type" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
             {PAIRS.map((p) => (
               <button key={p.id} type="button" role="radio" className="choice" aria-checked={p.id === pairType}
