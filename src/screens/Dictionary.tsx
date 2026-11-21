@@ -7,6 +7,7 @@ import { patchWord, useStore } from '../lib/store';
 import { enqueue } from '../lib/sync';
 import { localToday, manualStatus, type Status } from '../../shared/srs';
 import { TOPICS, type Word } from '../../shared/types';
+import { lessonList } from '../../shared/rounds';
 import KeyPrompt from './KeyPrompt';
 
 const STATUS_BG: Record<Status, string> = { New: 'var(--orange)', Learning: 'var(--pink)', Known: 'var(--sage)' };
@@ -20,6 +21,18 @@ const SORTS = [
 type SortId = (typeof SORTS)[number]['id'];
 const TOPIC_LIST = [...TOPICS].sort((a, b) => a.name.localeCompare(b.name));
 const zhOf = (t: string) => TOPICS.find((x) => x.name === t)?.zh ?? '';
+const BOOK_ZH: Record<string, string> = { Integrated: '综合', Speaking: '口语', Reading: '阅读', Workplace: '职场' };
+const PREFIX: Record<string, string> = { I: 'Integrated', S: 'Speaking', W: 'Workplace', R: 'Reading' };
+/** Lessons in your dictionary, grouped: course books first, then each book's lessons (I1…, S1…, W1…). */
+function lessonRows(all: string[]): { name: string; items: string[] }[] {
+  const code = /^([A-Z])(\d+)$/;
+  const books = all.filter((l) => !code.test(l));
+  const groups = new Map<string, string[]>();
+  all.filter((l) => code.test(l)).forEach((l) => { const g = PREFIX[l[0]] ?? l[0]; groups.set(g, [...(groups.get(g) ?? []), l]); });
+  const order = ['Integrated', 'Speaking', 'Workplace', 'Reading'];
+  const rows = [...groups.entries()].sort((a, b) => (order.indexOf(a[0]) + 99) % 99 - (order.indexOf(b[0]) + 99) % 99 || a[0].localeCompare(b[0])).map(([name, items]) => ({ name, items }));
+  return books.length ? [{ name: 'Course books', items: books.sort((a, b) => ((order.indexOf(a) + 99) % 99) - ((order.indexOf(b) + 99) % 99) || a.localeCompare(b)) }, ...rows] : rows;
+}
 const added = (iso?: string) => iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
 export default function Dictionary() {
@@ -28,6 +41,8 @@ export default function Dictionary() {
   const [q, setQ] = useState('');
   const [topic, setTopic] = useState(() => routeParams().get('topic') || 'all');
   const [status, setStatus] = useState<'all' | Status>('all');
+  const [lessons, setLessons] = useState<string[]>([]);
+  const toggleLesson = (l: string) => setLessons((cur) => (cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l]));
   const [sort, setSort] = useState<SortId>('newest');
   const [sheet, setSheet] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -37,6 +52,7 @@ export default function Dictionary() {
     return ws.filter((w) =>
       (t === 'all' || w.topics.includes(t)) &&
       (st === 'all' || w.status === st) &&
+      (!lessons.length || (w.lessons ?? []).some((l) => lessons.includes(l))) &&
       (!nq || w.hz.includes(q.trim()) || norm(w.py).includes(nq) || w.en.toLowerCase().includes(q.trim().toLowerCase())));
   };
 
@@ -49,14 +65,15 @@ export default function Dictionary() {
     else if (sort === 'pinyin') ws.sort((a, b) => norm(a.py).localeCompare(norm(b.py)) || a.py.localeCompare(b.py));
     else ws.sort((a, b) => b.timesForgot - a.timesForgot || created(b).localeCompare(created(a)));
     return ws;
-  }, [words, q, topic, status, sort]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [words, q, topic, status, lessons, sort]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (store.error?.status === 401) return <KeyPrompt onDone={() => void store.retry()} />;
 
   const known = words?.filter((w) => w.status === 'Known').length ?? 0;
   const open = words?.find((w) => w.id === openId) ?? null;
-  const nFilters = (topic !== 'all' ? 1 : 0) + (status !== 'all' ? 1 : 0);
-  const clearAll = () => { setTopic('all'); setStatus('all'); setSort('newest'); };
+  const nFilters = (topic !== 'all' ? 1 : 0) + (status !== 'all' ? 1 : 0) + (lessons.length ? 1 : 0);
+  const clearAll = () => { setTopic('all'); setStatus('all'); setLessons([]); setSort('newest'); };
+  const rows = words ? lessonRows(lessonList(words)) : [];
   const sortName = SORTS.find((s) => s.id === sort)!.name;
 
   const setWordStatus = (w: Word, s: Status) => {
@@ -90,6 +107,7 @@ export default function Dictionary() {
           <button type="button" onClick={() => setSheet(true)} className="pill" style={{ height: 28, background: 'transparent' }}>↕ {sortName}</button>
           {topic !== 'all' && <button type="button" onClick={() => setTopic('all')} aria-label={`Remove filter ${topic}`} className="pill" style={{ height: 28, background: 'var(--ink)', color: 'var(--cream)' }}><span className="hz">{zhOf(topic)}</span> {topic} <Icon.X size={8} /></button>}
           {status !== 'all' && <button type="button" onClick={() => setStatus('all')} aria-label={`Remove filter ${status}`} className="pill" style={{ height: 28, background: 'var(--ink)', color: 'var(--cream)' }}>{status} <Icon.X size={8} /></button>}
+          {lessons.length > 0 && <button type="button" onClick={() => setLessons([])} aria-label={`Remove filter lessons ${lessons.join(', ')}`} className="pill" style={{ height: 28, background: 'var(--ink)', color: 'var(--cream)' }}>{lessons.join(' + ')} <Icon.X size={8} /></button>}
         </div>
       </div>
 
@@ -150,6 +168,23 @@ export default function Dictionary() {
               ))}
             </div>
           </section>
+          {rows.length > 0 && (
+            <section className="sec">
+              <div className="sec-head"><h2 style={{ fontSize: 19 }}>Lesson <span style={{ fontWeight: 500, fontSize: 13, color: 'var(--grey)' }}><span className="hz" style={{ fontWeight: 400 }}>课</span> · kè</span></h2><p>{lessons.length ? `${lessons.length} selected · any of them` : 'pick one or more'}</p></div>
+              {rows.map((r) => (
+                <div key={r.name} role="group" aria-label={r.name} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: 'var(--grey)' }}>{r.name}</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {r.items.map((l) => (
+                      <button key={l} type="button" className="pill choice" aria-pressed={lessons.includes(l)} onClick={() => toggleLesson(l)} style={{ height: 36, minWidth: 44, justifyContent: 'center', fontSize: 13, borderRadius: 999, borderWidth: 1.5 }}>
+                        {BOOK_ZH[l] && <span className="hz" style={{ fontSize: 14 }}>{BOOK_ZH[l]}</span>}{l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </section>
+          )}
           <section className="sec">
             <div className="sec-head"><h2 style={{ fontSize: 19 }}>Topic</h2><p>A–Z</p></div>
             <div role="group" aria-label="Topic" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -183,6 +218,7 @@ export default function Dictionary() {
                 {open.pos && <span className="pill">{open.pos}</span>}
                 {open.mw && <span className="pill">measure word <span className="hz" style={{ fontWeight: 400 }}>{open.mw}</span></span>}
                 {open.topics.map((t) => <span key={t} className="pill"><span className="hz" style={{ fontWeight: 400 }}>{zhOf(t)}</span> {t}</span>)}
+                {(open.lessons ?? []).map((l) => <span key={l} className="pill" style={{ borderStyle: 'dashed' }}>{l}</span>)}
               </div>
               {open.ex && (
                 <>
